@@ -1,0 +1,37 @@
+// Synthetic corpus: committed files match the generator and the manifest.
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+import { buildPdf, fixtures, sha256 } from '../make-fixtures.mjs';
+
+const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..',
+  'tests', 'corpus', 'public');
+const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+
+test('every generated fixture is committed unchanged and listed', () => {
+  const listed = new Map(manifest.fixtures.map(f => [f.file, f]));
+  for (const [name, bytes] of Object.entries(fixtures)) {
+    assert.ok(readFileSync(path.join(dir, name)).equals(bytes), `${name} differs`);
+    assert.equal(listed.get(name)?.sha256, sha256(bytes), `${name} manifest hash`);
+  }
+  assert.equal(listed.size, Object.keys(fixtures).length);
+});
+
+test('manifest entries carry the required metadata', () => {
+  for (const entry of manifest.fixtures) {
+    for (const key of ['id', 'file', 'sha256', 'origin', 'license', 'features', 'expected']) {
+      assert.ok(entry[key], `${entry.file ?? '?'}: missing ${key}`);
+    }
+  }
+});
+
+test('xref offsets point at their objects', () => {
+  const pdf = buildPdf(['<< /Type /Catalog >>', '<< /A 1 >>']).toString('latin1');
+  const start = Number(/startxref\n(\d+)/.exec(pdf)[1]);
+  assert.equal(pdf.slice(start, start + 4), 'xref');
+  const offsets = [...pdf.matchAll(/(\d{10}) 00000 n /g)].map(m => Number(m[1]));
+  offsets.forEach((offset, i) => assert.ok(pdf.startsWith(`${i + 1} 0 obj`, offset)));
+});

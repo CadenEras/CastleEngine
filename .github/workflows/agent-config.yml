@@ -32,3 +32,5 @@ jobs:
         run: node scripts/validate-agent-kit.mjs
       - name: Exercise hooks
         run: node --test scripts/tests/hooks.test.mjs
+      - name: Check synthetic fixtures
+        run: node --test scripts/tests/fixtures.test.mjs
