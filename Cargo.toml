@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/pdf-syntax", "crates/pdf-worker"]
+members = ["apps/desktop/src-tauri", "crates/pdf-syntax", "crates/pdf-worker"]
 
 [workspace.package]
 version = "0.0.0"
@@ -10,6 +10,7 @@ publish = false
 
 [workspace.dependencies]
 pdf-syntax = { path = "crates/pdf-syntax" }
+pdf-worker = { path = "crates/pdf-worker" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
