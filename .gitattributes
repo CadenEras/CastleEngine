@@ -4,6 +4,8 @@
 *.mjs text eol=lf
 *.yml text eol=lf
 *.rs text eol=lf
+*.toml text eol=lf
+Cargo.lock text eol=lf
 *.ts text eol=lf
 *.tsx text eol=lf
 *.pdf binary
