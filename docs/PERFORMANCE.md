@@ -49,3 +49,12 @@ Rapport par changement critique : corpus, commande/harness effectif, matériel, 
 mesures avant/après, dispersion, limites de sécurité inchangées et éventuel compromis de
 qualité. Ne jamais compenser une régression en supprimant les limites ou en dégradant
 silencieusement le rendu.
+
+## Relevés
+
+| Date | Portée | Relevé |
+| --- | --- | --- |
+| 2026-11-05 | Plancher au repos, Windows 11 x64 (`scripts/measure-memory.mjs`) | [P0 Windows](perf/2026-11-05-p0-windows.md) |
+
+Les relevés macOS et Linux du même plancher restent à faire sur des machines de
+référence ; les runners CI partagés ne servent pas de mesure.
