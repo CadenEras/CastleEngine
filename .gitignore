@@ -1,0 +1,23 @@
+# Données et réglages personnels
+.claude/settings.local.json
+.claude/agent-memory-local/
+.claude/worktrees/
+.claude/agent-memory/
+.env
+.env.*
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+# Ne pas stocker des documents clients dans le dépôt
+tests/corpus/private/
+artifacts/
+target/
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+# Conserver Cargo.lock et package-lock.json dans Git.
