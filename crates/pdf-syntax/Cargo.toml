@@ -1,0 +1,10 @@
+[package]
+name = "pdf-syntax"
+description = "PDF objects, sources and shared resource budgets"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
