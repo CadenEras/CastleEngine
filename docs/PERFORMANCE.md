@@ -63,6 +63,7 @@ Deux catégories, toujours indiquées avec le relevé :
 | Date | Catégorie | Portée | Relevé |
 | --- | --- | --- | --- |
 | 2026-11-05 | Référence | Plancher au repos, Windows 11 x64 | [P0 Windows](perf/2026-11-05-p0-windows.md) |
+| 2026-11-05 | Indicatif | Plancher au repos, Ubuntu 22.04 sous WSL2 | [P0 WSL2](perf/2026-11-05-p0-wsl2.md) |
 
 macOS et Linux n'ont pas encore de relevé de référence : il faut une machine physique
 pour chacun. Les relevés indicatifs du workflow `memory` sont dans le résumé de chaque
@@ -75,12 +76,13 @@ fichiers Linux (`~/`), pas sous `/mnt/` :
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y build-essential curl libwebkit2gtk-4.1-dev libxdo-dev \
+sudo apt-get install -y build-essential pkg-config curl libwebkit2gtk-4.1-dev libxdo-dev \
   libayatana-appindicator3-dev librsvg2-dev
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 . "$HOME/.cargo/env"
 # Node 24 : via nvm ou le paquet officiel ; vérifier `node --version`.
 git clone https://github.com/CadenEras/CastleEngine.git && cd CastleEngine
+rustup toolchain install   # version de rust-toolchain.toml
 npm --prefix apps/desktop ci
 npm --prefix apps/desktop run tauri -- build --no-bundle -- --locked
 node scripts/measure-memory.mjs 10 5
