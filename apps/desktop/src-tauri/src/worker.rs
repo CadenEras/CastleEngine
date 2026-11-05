@@ -2,6 +2,7 @@
 //! validated requests; a manager thread forwards them, polls responses and
 //! publishes job events, so no command ever waits on the worker.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -18,6 +19,8 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 /// Upper bound on the delay before a worker response reaches the UI.
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
+/// Jobs awaiting a final response before new ones are refused as `Busy`.
+const MAX_PENDING: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -157,6 +160,29 @@ fn failed(job_id: u64, reason: &str) -> JobEvent {
     }
 }
 
+/// Jobs sent without a final response yet, reported as failed if the worker
+/// dies. Bounded: once full, new jobs are answered `Busy` without being sent.
+#[derive(Debug, Default)]
+struct PendingJobs(BTreeSet<u64>);
+
+impl PendingJobs {
+    fn is_full(&self) -> bool {
+        self.0.len() >= MAX_PENDING
+    }
+
+    fn track(&mut self, id: u64) {
+        self.0.insert(id);
+    }
+
+    fn settle(&mut self, id: u64) {
+        self.0.remove(&id);
+    }
+
+    fn drain(&mut self) -> impl Iterator<Item = u64> + use<> {
+        std::mem::take(&mut self.0).into_iter()
+    }
+}
+
 fn manage(path: Option<&Path>, commands: &Receiver<Command>, publish: &dyn Fn(JobEvent)) {
     let mut worker = match path.map(|p| WorkerProcess::spawn(p, HANDSHAKE_TIMEOUT)) {
         Some(Ok(worker)) => Some(worker),
@@ -169,8 +195,7 @@ fn manage(path: Option<&Path>, commands: &Receiver<Command>, publish: &dyn Fn(Jo
             None
         }
     };
-    // Job whose result is still expected, reported as failed if the worker dies.
-    let mut pending: Option<u64> = None;
+    let mut pending = PendingJobs::default();
 
     loop {
         match commands.recv_timeout(POLL_INTERVAL) {
@@ -185,8 +210,15 @@ fn manage(path: Option<&Path>, commands: &Receiver<Command>, publish: &dyn Fn(Jo
                     units,
                     unit_delay_ms,
                 };
-                match worker.as_ref().map(|w| w.send(&request)) {
-                    Some(Ok(())) => pending = pending.or(Some(id)),
+                let sent = if pending.is_full() {
+                    Some(Err(ClientError::Backpressure))
+                } else {
+                    worker.as_ref().map(|w| w.send(&request))
+                };
+                match sent {
+                    Some(Ok(())) => {
+                        pending.track(id);
+                    }
                     Some(Err(ClientError::Backpressure)) => publish(JobEvent {
                         job_id: id,
                         outcome: JobOutcome::Busy,
@@ -219,15 +251,13 @@ fn manage(path: Option<&Path>, commands: &Receiver<Command>, publish: &dyn Fn(Jo
                     break;
                 }
             };
-            if pending == Some(job_id) {
-                pending = None;
-            }
+            pending.settle(job_id);
             publish(JobEvent { job_id, outcome });
         }
-        if worker.is_none()
-            && let Some(job_id) = pending.take()
-        {
-            publish(failed(job_id, "worker exited"));
+        if worker.is_none() {
+            for job_id in pending.drain() {
+                publish(failed(job_id, "worker exited"));
+            }
         }
     }
 
@@ -308,6 +338,49 @@ mod tests {
         let start = Instant::now();
         handle.stop();
         assert!(start.elapsed() < SHUTDOWN_GRACE + Duration::from_secs(1));
+    }
+
+    #[test]
+    fn pending_jobs_track_every_job_until_settled() {
+        let mut pending = PendingJobs::default();
+        pending.track(1);
+        pending.track(2);
+        pending.settle(1);
+        pending.track(3);
+        assert_eq!(pending.drain().collect::<Vec<_>>(), vec![2, 3]);
+        assert_eq!(pending.drain().count(), 0);
+        for id in 0..u64::try_from(MAX_PENDING).unwrap() {
+            assert!(!pending.is_full());
+            pending.track(id);
+        }
+        assert!(pending.is_full());
+    }
+
+    #[test]
+    fn overlapping_jobs_each_get_one_final_event() {
+        let (handle, events) = start();
+        let first = handle.run(10_000, 10).unwrap();
+        let second = handle.run(1, 0).unwrap();
+        handle.cancel(first).unwrap();
+        let mut seen = vec![
+            events.recv_timeout(TIMEOUT).unwrap(),
+            events.recv_timeout(TIMEOUT).unwrap(),
+        ];
+        seen.sort_by_key(|e| e.job_id);
+        assert_eq!(
+            seen,
+            vec![
+                JobEvent {
+                    job_id: first,
+                    outcome: JobOutcome::Cancelled
+                },
+                JobEvent {
+                    job_id: second,
+                    outcome: JobOutcome::Busy
+                },
+            ]
+        );
+        handle.stop();
     }
 
     #[test]

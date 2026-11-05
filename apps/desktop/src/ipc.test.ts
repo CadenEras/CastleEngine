@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseJobEvent, parseJobId } from "./ipc";
+import { describeCommandError, parseJobEvent, parseJobId } from "./ipc";
 
 describe("IPC payload validation", () => {
   it("accepts well-formed job events", () => {
@@ -27,6 +27,18 @@ describe("IPC payload validation", () => {
     ]) {
       expect(parseJobEvent(payload)).toBeNull();
     }
+  });
+
+  it("describes serialized shell errors instead of showing objects", () => {
+    expect(describeCommandError({ code: "workerUnavailable" })).toBe("worker indisponible");
+    expect(describeCommandError({ code: "invalidArgument", field: "units" })).toBe(
+      "argument invalide (units)",
+    );
+    expect(describeCommandError({ code: "invalidArgument", field: 3 })).toBe(
+      "erreur inattendue du shell",
+    );
+    expect(describeCommandError("boom")).toBe("erreur inattendue du shell");
+    expect(describeCommandError(new Error("x"))).toBe("x");
   });
 
   it("validates job ids returned by the shell", () => {

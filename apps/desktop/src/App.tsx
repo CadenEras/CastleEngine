@@ -43,17 +43,34 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// Results that arrive before `worker_run` returns their job id.
+const MAX_EARLY_EVENTS = 8;
+
 export function App() {
   const [job, setJob] = useState<JobState>({ kind: "idle" });
+  const [listening, setListening] = useState(false);
   // Latest job id: results of older jobs never overwrite a newer state.
   const latestJob = useRef<number | null>(null);
+  // The event and the command reply travel separately: keep a bounded set of
+  // results for ids not known yet instead of dropping them.
+  const earlyEvents = useRef(new Map<number, JobOutcome>());
 
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     onJobEvent((event) => {
-      if (event.jobId === latestJob.current) {
+      const latest = latestJob.current;
+      if (event.jobId === latest) {
         setJob({ kind: "finished", outcome: event.outcome });
+      } else if (latest === null || event.jobId > latest) {
+        const early = earlyEvents.current;
+        early.set(event.jobId, event.outcome);
+        for (const id of early.keys()) {
+          if (early.size <= MAX_EARLY_EVENTS) {
+            break;
+          }
+          early.delete(id);
+        }
       }
     }).then(
       (stop) => {
@@ -61,6 +78,7 @@ export function App() {
           stop();
         } else {
           unlisten = stop;
+          setListening(true);
         }
       },
       (error: unknown) => {
@@ -78,11 +96,21 @@ export function App() {
     runSyntheticJob(DIAGNOSTIC_UNITS, DIAGNOSTIC_DELAY_MS).then(
       (jobId) => {
         latestJob.current = jobId;
-        setJob((current) =>
-          current.kind === "starting"
+        const early = earlyEvents.current;
+        const outcome = early.get(jobId);
+        for (const id of early.keys()) {
+          if (id <= jobId) {
+            early.delete(id);
+          }
+        }
+        setJob((current) => {
+          if (current.kind !== "starting") {
+            return current;
+          }
+          return outcome === undefined
             ? { kind: "running", jobId, cancelling: false }
-            : current,
-        );
+            : { kind: "finished", outcome };
+        });
       },
       (error: unknown) => {
         setJob({ kind: "error", message: errorMessage(error) });
@@ -117,7 +145,7 @@ export function App() {
           {describe(job)}
         </p>
         <div className="actions">
-          <button type="button" onClick={start} disabled={busy}>
+          <button type="button" onClick={start} disabled={busy || !listening}>
             Lancer une tâche de test
           </button>
           <button

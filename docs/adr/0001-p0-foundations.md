@@ -7,10 +7,10 @@ Responsable : à désigner (mainteneur du dépôt)
 ## Contexte et contraintes
 
 P0 doit livrer un workspace, une UI vide, un protocole worker, des budgets, un corpus
-et une CI sur trois OS (`docs/ROADMAP.md`). Aucune toolchain Rust n'est installée sur
-la machine de rédaction ; Node v24.16.0 et npm 11.6.4 y sont observés. Les versions
-ci-dessous ont été relevées le 2026-11-05 (canal stable Rust, `npm view`) et n'ont
-**pas** encore été installées ni compilées ensemble.
+et une CI sur trois OS (`docs/ROADMAP.md`). Versions relevées le 2026-11-05 (canal
+stable Rust, `npm view`, crates.io), puis installées et compilées ensemble : localement
+sous Windows 11 x64 (Rust 1.99.1, Node 24.16.0, npm 11.6.4) et en CI sur Ubuntu,
+Windows et macOS. Le statut reste « proposé » jusqu'à acceptation par un mainteneur.
 
 ## Options
 

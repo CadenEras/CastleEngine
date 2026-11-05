@@ -39,6 +39,15 @@ async function startJob(jobId: number) {
   });
 }
 
+async function renderApp() {
+  const view = render(<App />);
+  // Let the event subscription resolve: starting is disabled until then.
+  await act(async () => {
+    await Promise.resolve();
+  });
+  return view;
+}
+
 beforeEach(() => {
   ipc.handler = null;
   vi.clearAllMocks();
@@ -51,7 +60,7 @@ afterEach(() => {
 
 describe("App", () => {
   it("runs a job and shows its result", async () => {
-    render(<App />);
+    await renderApp();
     expect(status()).toBe("Worker prêt.");
     await startJob(1);
     expect(status()).toBe("Tâche en cours…");
@@ -60,7 +69,7 @@ describe("App", () => {
   });
 
   it("cancels the running job", async () => {
-    render(<App />);
+    await renderApp();
     await startJob(4);
     fireEvent.click(screen.getByRole("button", { name: "Annuler" }));
     expect(ipc.cancelJob).toHaveBeenCalledWith(4);
@@ -70,7 +79,7 @@ describe("App", () => {
   });
 
   it("ignores results of older jobs", async () => {
-    render(<App />);
+    await renderApp();
     await startJob(1);
     emit({ jobId: 1, outcome: { kind: "cancelled" } });
     await startJob(2);
@@ -79,7 +88,7 @@ describe("App", () => {
   });
 
   it("reports a shell error", async () => {
-    render(<App />);
+    await renderApp();
     ipc.runSyntheticJob.mockRejectedValueOnce(new Error("worker unavailable"));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Lancer une tâche de test" }));
@@ -88,11 +97,35 @@ describe("App", () => {
     expect(status()).toBe("Erreur : worker unavailable");
   });
 
-  it("stops listening on unmount", async () => {
-    const { unmount } = render(<App />);
+  it("keeps a result that arrives before the job id", async () => {
+    await renderApp();
+    let resolve: (jobId: number) => void = () => undefined;
+    ipc.runSyntheticJob.mockReturnValueOnce(
+      new Promise<number>((done) => {
+        resolve = done;
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Lancer une tâche de test" }));
+    emit({ jobId: 9, outcome: { kind: "failed", reason: "worker unavailable" } });
+    await act(async () => {
+      resolve(9);
+      await Promise.resolve();
+    });
+    expect(status()).toBe("Échec du worker : worker unavailable");
+  });
+
+  it("enables starting only once events are being received", async () => {
+    render(<App />);
+    const start = screen.getByRole("button", { name: "Lancer une tâche de test" });
+    expect((start as HTMLButtonElement).disabled).toBe(true);
     await act(async () => {
       await Promise.resolve();
     });
+    expect((start as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("stops listening on unmount", async () => {
+    const { unmount } = await renderApp();
     unmount();
     expect(ipc.unlisten).toHaveBeenCalledOnce();
   });

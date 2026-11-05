@@ -60,15 +60,39 @@ export function parseJobEvent(value: unknown): JobEvent | null {
   return outcome === null ? null : { jobId: value.jobId, outcome };
 }
 
+/** Turns a rejected command (a serialized Rust `CommandError`) into a message. */
+export function describeCommandError(error: unknown): string {
+  if (isRecord(error)) {
+    if (error.code === "workerUnavailable") {
+      return "worker indisponible";
+    }
+    if (error.code === "invalidArgument" && typeof error.field === "string") {
+      return `argument invalide (${error.field})`;
+    }
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "erreur inattendue du shell";
+}
+
+async function command(name: string, args: Record<string, number>): Promise<unknown> {
+  try {
+    return await invoke<unknown>(name, args);
+  } catch (error: unknown) {
+    throw new Error(describeCommandError(error), { cause: error });
+  }
+}
+
 export async function runSyntheticJob(
   units: number,
   unitDelayMs: number,
 ): Promise<number> {
-  return parseJobId(await invoke<unknown>("worker_run", { units, unitDelayMs }));
+  return parseJobId(await command("worker_run", { units, unitDelayMs }));
 }
 
 export async function cancelJob(jobId: number): Promise<void> {
-  await invoke<unknown>("worker_cancel", { jobId });
+  await command("worker_cancel", { jobId });
 }
 
 /** Malformed payloads are dropped rather than shown. */
