@@ -25,15 +25,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2; update by reviewed PR
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; update by reviewed PR
         with:
           persist-credentials: false
       # The workspace includes the Tauri shell, which needs WebKitGTK on Linux.
       - name: Install Tauri system dependencies
         if: runner.os == 'Linux'
+        # A stalled mirror must fail fast and be retried, not consume the job timeout.
+        timeout-minutes: 10
+        env:
+          APT_OPTS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get $APT_OPTS update
+          sudo apt-get $APT_OPTS install -y --no-install-recommends libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
       # Standard hosted runners only (free for public repositories). They ship
       # rustup; rust-toolchain.toml selects the exact version.
       - name: Install pinned toolchain
