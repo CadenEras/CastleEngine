@@ -9,7 +9,10 @@ node scripts/validate-agent-kit.mjs
 node --test scripts/tests/hooks.test.mjs
 ```
 
-Node 22+ suffit, sans installation npm. Le validateur contrôle JSON, frontmatter du
+Node 22+ suffit, sans installation npm. La fixture PDF synthétique se régénère avec
+`node scripts/make-fixtures.mjs` et se vérifie avec `node --test scripts/tests/fixtures.test.mjs`.
+Le plancher mémoire de l'application release se mesure avec `node scripts/measure-memory.mjs`
+(voir `docs/PERFORMANCE.md`). Le validateur contrôle JSON, frontmatter du
 sous-ensemble utilisé, références Markdown locales et configuration des hooks. Il
 n'est pas un validateur officiel du schéma Claude Code ni un interpréteur YAML général.
 

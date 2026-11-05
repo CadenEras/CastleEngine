@@ -50,8 +50,8 @@ Windows et macOS. Le statut reste « proposé » jusqu'à acceptation par un mai
 - Tests du premier jalon : limite exacte acceptée, limite + 1 refusée sans modifier le
   compteur, annulation observée en cours de tâche, trame trop grande rejetée avant
   allocation, trame tronquée signalée.
-- Restent à faire en P0 : fixture synthétique et mesure du plancher mémoire selon
-  `docs/PERFORMANCE.md`.
+- Fixture synthétique : `tests/corpus/public/minimal.pdf`, générée et vérifiée par script.
+  Plancher mémoire Windows : `docs/perf/2026-11-05-p0-windows.md` ; macOS et Linux à mesurer.
 - Isolation OS du worker (Job Objects / AppContainer, sandbox macOS, seccomp/Landlock) :
   à étudier par OS ; aucune isolation n'est revendiquée avant tests dédiés.
 - Retour arrière : les versions sont modifiables par PR ; le protocole est versionné
