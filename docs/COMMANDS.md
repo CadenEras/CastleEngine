@@ -17,18 +17,20 @@ Pour Claude Code : `claude --version`, puis dans une session `/status`, `/permis
 `/hooks`, `/agents`. Les tests Node ne demandent pas de connexion Claude et ne consomment
 pas l'abonnement.
 
-## À créer et vérifier pendant P0
+## Produit (P0)
 
-Les commandes suivantes sont des **contrats cibles**, non exécutables tant que les
-manifests, scripts et dépendances correspondants n'existent pas. Choix initial : npm,
-un `package-lock.json` dans `apps/desktop`, sans workspace npm racine ; workspace Cargo
-racine avec `apps/desktop/src-tauri` comme membre. Adapter ce document si ce choix change.
+Disponibles depuis P0 et exécutées par la CI : workflow `rust` (fmt, Clippy, tests, sur
+les trois OS) et workflow `desktop` (contrôles du frontend sur Ubuntu, build natif release
+sans installateur sur les trois OS).
+npm, un `package-lock.json` dans `apps/desktop`, sans workspace npm racine ; workspace
+Cargo racine avec `apps/desktop/src-tauri` comme membre. Prérequis : rustup (la version
+vient de `rust-toolchain.toml`), Node 24, dépendances système Tauri (WebKitGTK sous Linux).
+`cargo test --workspace` construit aussi `pdf-worker`, utilisé par les tests du shell.
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
-cargo test --workspace --doc --locked
+cargo test --workspace --locked   # inclut les doctests
 npm --prefix apps/desktop ci
 npm --prefix apps/desktop run lint
 npm --prefix apps/desktop run typecheck
@@ -37,8 +39,8 @@ npm --prefix apps/desktop run build
 npm --prefix apps/desktop run tauri -- build --no-bundle
 ```
 
-Créer des scripts npm non interactifs : `lint`, `typecheck`, `test:unit`, `build`,
-`tauri`. Documenter séparément les tests E2E réels et leur support par OS. Un navigateur
+Scripts npm non interactifs : `lint`, `typecheck`, `test:unit`, `build`, `tauri` ;
+`npm --prefix apps/desktop run tauri -- dev` lance l'application en développement. Documenter séparément les tests E2E réels et leur support par OS. Un navigateur
 web de test ne remplace pas automatiquement la WebView Tauri.
 
 Verrouiller une toolchain Rust exacte et les versions Node/npm utilisées en CI,

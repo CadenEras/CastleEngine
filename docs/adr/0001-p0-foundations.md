@@ -7,10 +7,10 @@ Responsable : à désigner (mainteneur du dépôt)
 ## Contexte et contraintes
 
 P0 doit livrer un workspace, une UI vide, un protocole worker, des budgets, un corpus
-et une CI sur trois OS (`docs/ROADMAP.md`). Aucune toolchain Rust n'est installée sur
-la machine de rédaction ; Node v24.16.0 et npm 11.6.4 y sont observés. Les versions
-ci-dessous ont été relevées le 2026-11-05 (canal stable Rust, `npm view`) et n'ont
-**pas** encore été installées ni compilées ensemble.
+et une CI sur trois OS (`docs/ROADMAP.md`). Versions relevées le 2026-11-05 (canal
+stable Rust, `npm view`, crates.io), puis installées et compilées ensemble : localement
+sous Windows 11 x64 (Rust 1.99.1, Node 24.16.0, npm 11.6.4) et en CI sur Ubuntu,
+Windows et macOS. Le statut reste « proposé » jusqu'à acceptation par un mainteneur.
 
 ## Options
 
@@ -29,7 +29,10 @@ ci-dessous ont été relevées le 2026-11-05 (canal stable Rust, `npm view`) et 
 | --- | --- |
 | Rust | 1.99.1 exacte via `rust-toolchain.toml`, édition 2024, MSRV = 1.99 |
 | Node / npm | Node 24 LTS, npm 11 ; versions exactes à fixer dans la CI |
-| Tauri / React / TS / Vite | CLI 2.12.4, React 19.3.1, TypeScript 7.0.2, Vite 8.3.6 — à confirmer à l'installation, en particulier la compatibilité de l'outillage avec TypeScript 7 |
+| Tauri / React / TS / Vite | Crate `tauri` 2.12.5, CLI et `@tauri-apps/api` 2.12.4, React 19.3.1, Vite 8.3.6, Vitest 5.1.0, ESLint 10.14.0. **TypeScript 6.0.3** et non 7.0.2 : `typescript-eslint` 8.72.1 exige TypeScript < 6.1. Versions exactes dans `package-lock.json` et `Cargo.lock` |
+| Identifiant d'application | `io.github.cadeneras.castleengine` (persistant : chemins de données par OS) |
+| Lancement du worker | Binaire `pdf-worker` à côté de l'exécutable du shell, lancé par `std::process`, sans plugin shell Tauri. L'empaquetage en sidecar est traité avec les installateurs |
+| Permissions Tauri | Commandes applicatives déclarées dans `build.rs` ; capability `default` limitée à l'écoute d'événements et aux deux commandes du worker ; CSP sans script distant ni `unsafe-inline` hors développement |
 | OS minimums | Windows 10 22H2 / 11 x64 en priorité ; macOS 13+ ; Linux x86_64 avec WebKitGTK 4.1 (base Ubuntu 22.04). ARM64 hors périmètre P0 |
 | Workspace | Cargo à la racine, resolver 3 ; crates créées à mesure du besoin, en commençant par `pdf-syntax` et `pdf-worker` ; `apps/desktop/src-tauri` rejoint le workspace quand le shell existe |
 | Lints | `unsafe_code = "forbid"` ; Clippy `unwrap_used`, `expect_used`, `panic`, `indexing_slicing` refusés hors tests |
@@ -47,8 +50,7 @@ ci-dessous ont été relevées le 2026-11-05 (canal stable Rust, `npm view`) et 
 - Tests du premier jalon : limite exacte acceptée, limite + 1 refusée sans modifier le
   compteur, annulation observée en cours de tâche, trame trop grande rejetée avant
   allocation, trame tronquée signalée.
-- Restent à faire en P0 : shell Tauri minimal, binaire worker et pilotage par Tauri,
-  CI Rust/UI/native sur trois OS, fixture synthétique, mesure du plancher mémoire selon
+- Restent à faire en P0 : fixture synthétique et mesure du plancher mémoire selon
   `docs/PERFORMANCE.md`.
 - Isolation OS du worker (Job Objects / AppContainer, sandbox macOS, seccomp/Landlock) :
   à étudier par OS ; aucune isolation n'est revendiquée avant tests dédiés.

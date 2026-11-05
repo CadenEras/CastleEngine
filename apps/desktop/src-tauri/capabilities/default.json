@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window: listen to worker job events and drive diagnostic jobs. No file, shell or network permission.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-worker-run",
+    "allow-worker-cancel"
+  ]
+}
