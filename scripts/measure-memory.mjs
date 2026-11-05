@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 // Measures the idle memory floor of the release desktop app: shell, worker
-// and WebView processes (the whole process tree), over several cold starts.
+// and WebView processes, over several successive starts.
 // Usage: node scripts/measure-memory.mjs [runs=10] [settleSeconds=5]
-// Requires `npm --prefix apps/desktop run tauri -- build --no-bundle` first.
-// Reports medians and ranges; it does not judge them against a budget.
+// Requires `npm --prefix apps/desktop run tauri -- build --no-bundle -- --locked`
+// first (from bash: PowerShell drops the first `--`).
+// Prints a Markdown report; it does not judge results against a budget.
+//
+// Attribution per OS:
+// - Windows: the shell process tree (WebView2 processes are descendants).
+// - Linux: the shell process tree (WebKitGTK processes are descendants).
+// - macOS: the shell tree plus WebKit XPC services (com.apple.WebKit.*) that
+//   appeared after the launch: they are children of launchd, not of the app.
+//   Reliable only when no other WebKit app starts meanwhile (e.g. a CI runner).
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -17,6 +25,8 @@ const exe = path.join(root, 'target', 'release',
 const runs = Number.parseInt(process.argv[2] ?? '10', 10);
 const settleSeconds = Number.parseInt(process.argv[3] ?? '5', 10);
 const MiB = 1024 * 1024;
+const WORKER = /^pdf-worker/;
+const MACOS_WEBKIT = /^com\.apple\.WebKit\./;
 
 if (!existsSync(exe)) {
   console.error(`missing ${exe}: build the release app first`);
@@ -27,7 +37,18 @@ if (!(runs > 0 && settleSeconds > 0)) {
   process.exit(1);
 }
 
-// Returns [{ pid, ppid, name, rss, priv }] in bytes; priv is null when unknown.
+// Linux only: proportional and private memory from smaps_rollup, in bytes.
+function linuxDetails(pid) {
+  try {
+    const text = readFileSync(`/proc/${pid}/smaps_rollup`, 'utf8');
+    const kb = key => Number(new RegExp(`^${key}:\\s+(\\d+) kB`, 'm').exec(text)?.[1] ?? 0) * 1024;
+    return { pss: kb('Pss'), priv: kb('Private_Clean') + kb('Private_Dirty') };
+  } catch {
+    return { pss: null, priv: null };
+  }
+}
+
+// Returns [{ pid, ppid, name, rss, priv, pss }] in bytes; null when unknown.
 function processTable() {
   if (process.platform === 'win32') {
     const script = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,'
@@ -36,21 +57,19 @@ function processTable() {
       { encoding: 'utf8', maxBuffer: 64 * MiB });
     return JSON.parse(out).map(p => ({
       pid: p.ProcessId, ppid: p.ParentProcessId, name: p.Name,
-      rss: Number(p.WorkingSetSize), priv: Number(p.PrivatePageCount),
+      rss: Number(p.WorkingSetSize), priv: Number(p.PrivatePageCount), pss: null,
     }));
   }
-  const out = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,rss=,comm='], { encoding: 'utf8' });
+  const out = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,rss=,comm='],
+    { encoding: 'utf8', maxBuffer: 64 * MiB });
   return out.trim().split('\n').map(line => {
     const [pid, ppid, rss, ...name] = line.trim().split(/\s+/);
     return { pid: Number(pid), ppid: Number(ppid), name: path.basename(name.join(' ')),
-      rss: Number(rss) * 1024, priv: null };
+      rss: Number(rss) * 1024, priv: null, pss: null };
   });
 }
 
-// Descendants of the shell only. WebView2 (Windows) and WebKitGTK (Linux)
-// processes are descendants; macOS WebKit XPC services are not and are
-// therefore NOT counted there. Matching them by name would include other apps.
-function tree(table, rootPid) {
+function descendants(table, rootPid) {
   const ids = new Set([rootPid]);
   for (let grew = true; grew;) {
     grew = false;
@@ -58,7 +77,14 @@ function tree(table, rootPid) {
       if (!ids.has(p.pid) && ids.has(p.ppid)) { ids.add(p.pid); grew = true; }
     }
   }
-  return table.filter(p => ids.has(p.pid));
+  return ids;
+}
+
+function appProcesses(table, rootPid, webkitBefore) {
+  const ids = descendants(table, rootPid);
+  return table.filter(p => ids.has(p.pid)
+    || (process.platform === 'darwin' && MACOS_WEBKIT.test(p.name) && !webkitBefore.has(p.pid)))
+    .map(p => (process.platform === 'linux' ? { ...p, ...linuxDetails(p.pid) } : p));
 }
 
 function stop(child) {
@@ -68,6 +94,7 @@ function stop(child) {
     try { execFileSync('taskkill', ['/PID', String(child.pid)], { stdio: 'ignore' }); }
     catch { /* already gone */ }
   } else {
+    // The worker then sees the end of its input and exits by itself.
     child.kill('SIGTERM');
   }
 }
@@ -81,18 +108,28 @@ const fmt = bytes => (bytes / MiB).toFixed(1);
 
 const samples = [];
 for (let i = 0; i < runs; i++) {
+  const webkitBefore = new Set(processTable()
+    .filter(p => MACOS_WEBKIT.test(p.name)).map(p => p.pid));
   const child = spawn(exe, [], { stdio: 'ignore' });
   await sleep(settleSeconds * 1000);
-  const procs = tree(processTable(), child.pid);
-  const sum = (filter, key) => procs.filter(filter).reduce((n, p) => n + (p[key] ?? 0), 0);
+  if (child.exitCode !== null) {
+    console.error(`run ${i + 1}: app exited early with code ${child.exitCode}`);
+    process.exit(1);
+  }
+  const procs = appProcesses(processTable(), child.pid, webkitBefore);
   const isShell = p => p.pid === child.pid;
-  const isWorker = p => /^pdf-worker/.test(p.name);
+  const isWorker = p => WORKER.test(p.name);
   const isWebView = p => !isShell(p) && !isWorker(p);
+  const sum = (filter, key) => {
+    const values = procs.filter(filter).map(p => p[key]);
+    return values.includes(null) ? null : values.reduce((n, v) => n + v, 0);
+  };
   samples.push({
     processes: procs.length,
     shell: sum(isShell, 'rss'), worker: sum(isWorker, 'rss'), webview: sum(isWebView, 'rss'),
     total: sum(() => true, 'rss'),
-    privateTotal: process.platform === 'win32' ? sum(() => true, 'priv') : null,
+    privateTotal: sum(() => true, 'priv'),
+    pssTotal: sum(() => true, 'pss'),
     workerFound: procs.some(isWorker),
   });
   const workerPids = new Set(procs.filter(isWorker).map(p => p.pid));
@@ -106,7 +143,7 @@ for (let i = 0; i < runs; i++) {
     process.exit(1);
   }
   await sleep(1000);
-  if (processTable().some(p => workerPids.has(p.pid) && /^pdf-worker/.test(p.name))) {
+  if (processTable().some(p => workerPids.has(p.pid) && WORKER.test(p.name))) {
     console.error(`run ${i + 1}: pdf-worker survived the application`);
     process.exit(1);
   }
@@ -117,17 +154,21 @@ if (samples.some(s => !s.workerFound)) {
   process.exit(1);
 }
 
+const resident = process.platform === 'win32' ? 'working set' : 'RSS';
 const rows = [
-  ['Shell (working set / RSS)', 'shell'],
-  ['Worker (working set / RSS)', 'worker'],
-  ['WebView (working set / RSS)', 'webview'],
-  ['Total (working set / RSS)', 'total'],
-  ...(process.platform === 'win32' ? [['Total private bytes', 'privateTotal']] : []),
-];
-console.log(`Platform: ${os.type()} ${os.release()} ${os.arch()}, ${os.cpus()[0]?.model ?? 'CPU?'}, `
-  + `${fmt(os.totalmem())} MiB RAM, Node ${process.version}`);
+  [`Shell (${resident})`, 'shell'],
+  [`Worker (${resident})`, 'worker'],
+  [`WebView (${resident})`, 'webview'],
+  [`Total (${resident}, shared pages counted repeatedly)`, 'total'],
+  ['Total private bytes', 'privateTotal'],
+  ['Total PSS', 'pssTotal'],
+].filter(([, key]) => samples.every(s => s[key] !== null));
+
+console.log(`Platform: ${os.type()} ${os.release()} ${os.arch()}, `
+  + `${os.cpus()[0]?.model ?? 'CPU?'}, ${fmt(os.totalmem())} MiB RAM, Node ${process.version}`);
 console.log(`Runs: ${runs}, settle: ${settleSeconds} s after start, processes per run: `
   + `${median(samples.map(s => s.processes))}`);
+console.log('');
 console.log('| Measure | Median (MiB) | Min | Max |');
 console.log('| --- | --- | --- | --- |');
 for (const [label, key] of rows) {

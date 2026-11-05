@@ -1,0 +1,77 @@
+name: memory
+# Indicative idle memory floor on shared hosted runners. Not a reference
+# measurement (see docs/PERFORMANCE.md); run manually when needed.
+on:
+  # Not a required check: the path filter only re-validates the harness itself.
+  pull_request:
+    paths:
+      - scripts/measure-memory.mjs
+      - .github/workflows/memory.yml
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Number of successive starts
+        default: "10"
+      settle:
+        description: Seconds between start and measurement
+        default: "5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: memory-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  NODE_VERSION: "24.16.0"
+
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2; update by reviewed PR
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0; update by reviewed PR
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Install Tauri system dependencies and a virtual display
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb
+      - name: Install pinned toolchain
+        run: rustup toolchain install
+      - name: Build release app without bundling
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run tauri -- build --no-bundle -- --locked
+      - name: Measure
+        env:
+          RUNS: ${{ inputs.runs || '10' }}
+          SETTLE: ${{ inputs.settle || '5' }}
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a node scripts/measure-memory.mjs "$RUNS" "$SETTLE" | tee report.md
+          else
+            node scripts/measure-memory.mjs "$RUNS" "$SETTLE" | tee report.md
+          fi
+          {
+            echo "## ${{ matrix.os }} (runner partagé, indicatif)"
+            echo
+            cat report.md
+          } >> "$GITHUB_STEP_SUMMARY"
