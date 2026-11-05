@@ -75,9 +75,20 @@ mais ne doit pas configurer une approbation indépendante impossible à obtenir.
 En équipe, exiger un autre relecteur, particulièrement pour parsing, `unsafe`, IPC,
 permissions et sauvegarde. La revue d'un agent ne vaut pas approbation de compte humain.
 
-Le check fourni s'appelle `agent-config / validate` avec une matrice OS. Utiliser les
-noms réellement affichés par l'hébergeur pour les contrôles requis. En P0, ajouter
-Rust, UI et build natif ; à partir de la release, exiger les résultats sur les trois OS.
+Configuration GitHub en place depuis la fin de P0 (2026-11-05) :
+
+- Ruleset `Protect` sur la branche par défaut : suppression et force push interdits,
+  PR obligatoire sans approbation imposée, conversations résolues, squash merge seul,
+  branche à jour avec `main` avant fusion.
+- Contrôles requis, émis par GitHub Actions : `validate (<os>)` (kit, hooks, fixtures),
+  `checks (<os>)` (fmt, Clippy, tests Rust), `build (<os>)` (build natif release) pour
+  `ubuntu-latest`, `windows-latest` et `macos-latest`, plus `frontend` (lint, types,
+  tests et build UI).
+- Ruleset `Protect release tags` sur `refs/tags/v*` : ni suppression ni déplacement.
+- Dépôt : squash merge seul, titre de PR comme message, branche supprimée après fusion.
+- GitGuardian (application GitHub externe) s'exécute mais n'est pas un contrôle requis.
+
+Tout renommage de workflow ou de job doit mettre à jour la liste des contrôles requis.
 Ne pas employer de filtre de chemins qui laisserait un contrôle requis absent.
 
 ## Synchronisation et annulation
