@@ -1,9 +1,12 @@
-//! Worker side of the shell/worker boundary (ADR-0001). P0 provides bounded
-//! framing and a synthetic cancellable job; the worker binary and request
-//! messages come in a later slice.
+//! Worker side of the shell/worker boundary (ADR-0001): bounded framing,
+//! versioned messages, the request loop run by the `pdf-worker` binary and a
+//! client used by the shell to drive that process.
 
+pub mod client;
 pub mod frame;
 pub mod job;
+pub mod protocol;
+pub mod server;
 
 /// Incremented on any incompatible change of the framing or messages.
 pub const PROTOCOL_VERSION: u16 = 1;
