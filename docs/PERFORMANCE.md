@@ -52,9 +52,39 @@ silencieusement le rendu.
 
 ## Relevés
 
-| Date | Portée | Relevé |
-| --- | --- | --- |
-| 2026-11-05 | Plancher au repos, Windows 11 x64 (`scripts/measure-memory.mjs`) | [P0 Windows](perf/2026-11-05-p0-windows.md) |
+Deux catégories, toujours indiquées avec le relevé :
 
-Les relevés macOS et Linux du même plancher restent à faire sur des machines de
-référence ; les runners CI partagés ne servent pas de mesure.
+- **Référence** : machine physique décrite, OS natif, protocole ci-dessus. Seule base pour
+  comparer des tranches entre elles ou fixer un budget.
+- **Indicatif** : runner CI partagé (workflow `memory`, déclenché à la main ou par une
+  modification du script) ou Linux sous WSL2. Utile pour l'ordre de grandeur et pour
+  repérer un écart grossier ; affichage, GPU et matériel sont virtualisés ou partagés.
+
+| Date | Catégorie | Portée | Relevé |
+| --- | --- | --- | --- |
+| 2026-11-05 | Référence | Plancher au repos, Windows 11 x64 | [P0 Windows](perf/2026-11-05-p0-windows.md) |
+
+macOS et Linux n'ont pas encore de relevé de référence : il faut une machine physique
+pour chacun. Les relevés indicatifs du workflow `memory` sont dans le résumé de chaque
+exécution GitHub Actions.
+
+### Linux sous WSL2 (indicatif)
+
+Depuis la distribution Ubuntu de WSL2 avec WSLg, en clonant le dépôt dans le système de
+fichiers Linux (`~/`), pas sous `/mnt/` :
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential curl libwebkit2gtk-4.1-dev libxdo-dev \
+  libayatana-appindicator3-dev librsvg2-dev
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+. "$HOME/.cargo/env"
+# Node 24 : via nvm ou le paquet officiel ; vérifier `node --version`.
+git clone https://github.com/CadenEras/CastleEngine.git && cd CastleEngine
+npm --prefix apps/desktop ci
+npm --prefix apps/desktop run tauri -- build --no-bundle -- --locked
+node scripts/measure-memory.mjs 10 5
+```
+
+Consigner la version de WSL (`wsl --version` côté Windows), la distribution et la mémoire
+allouée à la VM avec le résultat.
