@@ -9,6 +9,8 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
 
 ### Ajouté
 
+- CI : `cargo-deny` (contrôle requis `deny`, workflow `advisories` pour RustSec),
+  Dependabot (Cargo, npm, actions), cache Rust écrit seulement depuis `main`.
 - Licence : double licence `Apache-2.0 OR MIT` (`LICENSE-APACHE`, `LICENSE-MIT`,
   champs `license` des paquets Cargo et npm).
 

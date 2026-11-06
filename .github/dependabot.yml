@@ -1,0 +1,47 @@
+# Weekly update proposals, grouped to limit pull request noise. Every update
+# goes through the normal PR checks; nothing is merged automatically.
+# The Rust toolchain (rust-toolchain.toml) and Node (NODE_VERSION in workflows)
+# are updated by hand, together with docs/adr and the README badges.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ["tauri", "tauri-*"]
+    commit-message:
+      prefix: build(deps)
+
+  - package-ecosystem: npm
+    directory: /apps/desktop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ["@tauri-apps/*"]
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      lint:
+        patterns: ["eslint", "@eslint/*", "typescript-eslint", "eslint-plugin-*", "globals"]
+      test:
+        patterns: ["vitest", "jsdom", "@testing-library/*"]
+    ignore:
+      # typescript-eslint 8.x requires TypeScript < 6.1 (ADR-0001).
+      - dependency-name: typescript
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+    commit-message:
+      prefix: build(deps)

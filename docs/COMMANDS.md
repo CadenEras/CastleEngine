@@ -42,6 +42,7 @@ npm --prefix apps/desktop run typecheck
 npm --prefix apps/desktop run test:unit
 npm --prefix apps/desktop run build
 npm --prefix apps/desktop run tauri -- build --no-bundle
+cargo deny check   # licences, sources, interdictions, avis RustSec ; cargo install --locked cargo-deny
 ```
 
 Scripts npm non interactifs : `lint`, `typecheck`, `test:unit`, `build`, `tauri` ;

@@ -1,0 +1,67 @@
+# cargo-deny policy: advisories, licenses, duplicate crates and sources.
+# Run with `cargo deny check`. Every exception names its crate, its reason and
+# when to revisit it; adding one requires a reviewed PR.
+
+[graph]
+# Check every target the desktop app ships on, not only the host.
+targets = [
+  "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+]
+all-features = true
+
+[advisories]
+# RustSec database. Unmaintained crates are reported for the whole graph.
+unmaintained = "all"
+yanked = "deny"
+ignore = [
+  # proc-macro-error: compile-time only, pulled by gtk-rs 0.18 (glib-macros)
+  # through Tauri's Linux backend. No upstream fix in Tauri 2; revisit with Tauri 3.
+  { id = "RUSTSEC-2024-0370", reason = "build-time proc macro of Tauri's Linux GTK backend; no upstream fix" },
+]
+
+[licenses]
+# Licenses compatible with distributing CastlePDF under Apache-2.0 OR MIT.
+# Keep the list to licenses actually present; widen it only by reviewed PR.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "BSD-3-Clause",
+  "Zlib",
+  "Unicode-3.0",
+]
+confidence-threshold = 0.9
+
+# MPL-2.0 is file-level copyleft: compatible with our binaries as long as these
+# crates' own sources stay available unmodified. Accepted only for crates
+# reached through the Tauri shell, never for the engine crates (crates/*).
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+crate = "cssparser"
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+crate = "cssparser-macros"
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+crate = "dtoa-short"
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+crate = "selectors"
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+crate = "option-ext"
+
+[bans]
+# Tauri pulls several versions of some crates; report them, do not fail.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
