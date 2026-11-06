@@ -83,7 +83,7 @@ Configuration GitHub en place depuis la fin de P0 (2026-11-05) :
 - Contrôles requis, émis par GitHub Actions : `validate (<os>)` (kit, hooks, fixtures),
   `checks (<os>)` (fmt, Clippy, tests Rust), `build (<os>)` (build natif release) pour
   `ubuntu-latest`, `windows-latest` et `macos-latest`, plus `frontend` (lint, types,
-  tests et build UI).
+  tests et build UI) et `deny` (licences, sources et interdictions via cargo-deny).
 - Ruleset `Protect release tags` sur `refs/tags/v*` : ni suppression ni déplacement.
 - Dépôt : squash merge seul, titre de PR comme message, branche supprimée après fusion.
 - GitGuardian (application GitHub externe) s'exécute mais n'est pas un contrôle requis.

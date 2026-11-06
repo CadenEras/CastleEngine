@@ -59,6 +59,9 @@ jobs:
           sudo apt-get $APT_OPTS install -y --no-install-recommends libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb
       - name: Install pinned toolchain
         run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3; update by reviewed PR
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build release app without bundling
         working-directory: apps/desktop
         run: |

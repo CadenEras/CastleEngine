@@ -61,6 +61,16 @@ Verrouiller dépendances et toolchains ; suivre RustSec/npm, licences, transitiv
 sources de polices et codecs. Ne pas adopter automatiquement une bibliothèque à licence
 incompatible. Les exceptions ont un responsable, une justification et une échéance.
 
+En place : `deny.toml` (cargo-deny) refuse toute licence hors liste, toute source hors
+crates.io et toute dépendance joker ; contrôle requis `deny` sur chaque PR. Les avis
+RustSec tournent dans le workflow `advisories` (hebdomadaire, sur `main` et quand
+`Cargo.lock` change), non bloquant pour les PR sans rapport. Exceptions actuelles,
+toutes atteintes par le shell Tauri et jamais par `crates/*` : MPL-2.0 pour `cssparser`,
+`cssparser-macros`, `dtoa-short`, `selectors` et `option-ext` ; RUSTSEC-2024-0370
+(`proc-macro-error`, macro de compilation du backend GTK Linux), à revoir avec Tauri 3.
+Dependabot propose chaque semaine les mises à jour Cargo, npm et actions ; le cache
+Rust de la CI n'est écrit que depuis `main`, jamais depuis une PR.
+
 CI de PR sans secrets, jeton en lecture seule, actions épinglées à un commit revu,
 pas de `pull_request_target` exécutant du code d'une contribution non fiable.
 Les runners de signature sont séparés ; artefacts et mises à jour sont vérifiés avant
