@@ -40,7 +40,7 @@ Windows et macOS. Proposée le 2026-11-05, acceptée sans modification le 2026-1
 | Worker | Sous-processus dédié. Trames `u32` little-endian + charge utile, taille maximale vérifiée avant allocation, version de protocole explicite, identifiant de requête et message d'annulation |
 | Dépendances | Aucune en P0. Décompression Flate, polices et rasterisation : ADR dédiée en P1/P2 (licence, sécurité, mémoire, maintenance) |
 | Profil PDF initial | PDF 1.x, xref classique, sans chiffrement ; toute capacité absente renvoie une erreur `Unsupported` explicite |
-| Licence du projet | Non décidée : `publish = false`, pas de champ `license` inventé |
+| Licence du projet | `Apache-2.0 OR MIT` (au choix de l'utilisateur), décidée le 2026-11-06 : norme de l'écosystème Rust, compatible avec les briques envisagées, clause de brevets d'Apache-2.0. Initialement non décidée |
 
 ## Conséquences et validation
 
