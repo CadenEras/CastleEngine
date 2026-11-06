@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const exe = path.join(root, 'target', 'release',
-  `castle-engine-desktop${process.platform === 'win32' ? '.exe' : ''}`);
+  `castle-pdf-desktop${process.platform === 'win32' ? '.exe' : ''}`);
 const runs = Number.parseInt(process.argv[2] ?? '10', 10);
 const settleSeconds = Number.parseInt(process.argv[3] ?? '5', 10);
 const MiB = 1024 * 1024;

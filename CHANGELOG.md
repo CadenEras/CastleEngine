@@ -7,6 +7,12 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
 
 ## [Non publié]
 
+### Modifié
+
+- Projet renommé CastlePDF (auparavant CastleEngine, homonyme d'un moteur de jeu) :
+  dépôt, application, identifiant `io.github.cadeneras.castlepdf`, paquets et binaire
+  `castle-pdf-desktop`.
+
 ## [0.1.0-alpha.1] — 2026-11-06
 
 Fin de la phase P0 (fondations). **Aucune lecture de PDF** : cette préversion fixe
@@ -37,5 +43,5 @@ l'architecture, le worker, les budgets et la CI. Aucun binaire n'est distribué.
 - Isolation OS du worker (sandbox) non implémentée.
 - Licence du projet non décidée.
 
-[Non publié]: https://github.com/CadenEras/CastleEngine/compare/v0.1.0-alpha.1...HEAD
-[0.1.0-alpha.1]: https://github.com/CadenEras/CastleEngine/releases/tag/v0.1.0-alpha.1
+[Non publié]: https://github.com/CadenEras/CastlePDF/compare/v0.1.0-alpha.1...HEAD
+[0.1.0-alpha.1]: https://github.com/CadenEras/CastlePDF/releases/tag/v0.1.0-alpha.1

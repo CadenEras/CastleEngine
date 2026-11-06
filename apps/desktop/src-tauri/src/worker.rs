@@ -96,7 +96,7 @@ impl WorkerHandle {
             .name("pdf-worker-manager".into())
             .spawn(move || manage(worker.as_deref(), &rx, &publish));
         if let Err(error) = &manager {
-            eprintln!("castle-engine: cannot start worker manager: {error}");
+            eprintln!("castle-pdf: cannot start worker manager: {error}");
         }
         Self {
             commands: Mutex::new((0, tx)),
@@ -187,11 +187,11 @@ fn manage(path: Option<&Path>, commands: &Receiver<Command>, publish: &dyn Fn(Jo
     let mut worker = match path.map(|p| WorkerProcess::spawn(p, HANDSHAKE_TIMEOUT)) {
         Some(Ok(worker)) => Some(worker),
         Some(Err(error)) => {
-            eprintln!("castle-engine: worker unavailable: {error}");
+            eprintln!("castle-pdf: worker unavailable: {error}");
             None
         }
         None => {
-            eprintln!("castle-engine: worker path unknown");
+            eprintln!("castle-pdf: worker path unknown");
             None
         }
     };
@@ -241,12 +241,12 @@ fn manage(path: Option<&Path>, commands: &Receiver<Command>, publish: &dyn Fn(Jo
                 Ok(Response::JobFailed { id, code }) => (id, outcome(code)),
                 Err(ClientError::Timeout) => break,
                 Ok(other) => {
-                    eprintln!("castle-engine: unexpected worker response: {other:?}");
+                    eprintln!("castle-pdf: unexpected worker response: {other:?}");
                     worker = None;
                     break;
                 }
                 Err(error) => {
-                    eprintln!("castle-engine: worker lost: {error}");
+                    eprintln!("castle-pdf: worker lost: {error}");
                     worker = None;
                     break;
                 }
