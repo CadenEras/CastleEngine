@@ -43,5 +43,8 @@ updates:
       # typescript-eslint 8.x requires TypeScript < 6.1 (ADR-0001).
       - dependency-name: typescript
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # Node types follow the Node major used by the project (24), upgraded by hand.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: build(deps)
