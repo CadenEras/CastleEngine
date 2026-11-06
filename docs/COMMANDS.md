@@ -62,6 +62,19 @@ licences ; `npm --prefix apps/desktop audit` pour les dépendances JS. Inclure l
 dépendances de build, codecs natifs et sidecars. Évaluer les alertes plutôt que lancer
 un correctif automatique majeur. Une exception doit avoir motif, responsable et échéance.
 
-Les cibles `cargo fuzz`, benchmarks, tests différentiels et vérifications de conformité
-seront ajoutés avec leurs fixtures et outils. Ne pas copier une commande imaginaire de
+Fuzzing (ADR-0002) : espace de travail séparé `fuzz/`, nightly daté dans
+`fuzz/rust-toolchain.toml`, sous Linux ou macOS (libFuzzer). Depuis `fuzz/` :
+
+```sh
+rustup toolchain install                      # nightly de fuzz/rust-toolchain.toml
+cargo install --locked cargo-fuzz@0.13.2
+cargo fuzz run lexer -- -max_total_time=300 -rss_limit_mb=2048 -dict=dict/pdf.dict
+```
+
+Un crash est écrit dans `fuzz/artifacts/<cible>/` ; le minimiser (`cargo fuzz tmin`)
+puis en faire un test de régression dans la crate concernée. La CI (`fuzz.yml`) lance
+5 minutes par cible chaque semaine et sur les PR touchant le parseur.
+
+Benchmarks, tests différentiels et vérifications de conformité seront ajoutés avec
+leurs fixtures et outils. Ne pas copier une commande imaginaire de
 `pdf-cli` : lire son `--help` et consigner l'interface effective lors de sa création.

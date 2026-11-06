@@ -9,6 +9,12 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
 
 ### Ajouté
 
+- `pdf-syntax` : tokenizer strict (ISO 32000-2, 7.2–7.3) avec offsets, erreurs
+  `Malformed`/`Truncated` localisées et chaînes/noms décodés comptés dans le budget ;
+  source d'entrée en mémoire bornée par la nouvelle limite `max_input_bytes` (512 Mio).
+- Tests de propriétés (`proptest`) et fuzzing (`cargo-fuzz`, cible `lexer`, workflow
+  `fuzz` borné en temps).
+- ADR-0002 accepté : stratégie de lecture P1.
 - CI : `cargo-deny` (contrôle requis `deny`, workflow `advisories` pour RustSec),
   Dependabot (Cargo, npm, actions), cache Rust écrit seulement depuis `main`.
 - Licence : double licence `Apache-2.0 OR MIT` (`LICENSE-APACHE`, `LICENSE-MIT`,

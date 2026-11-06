@@ -1,6 +1,6 @@
 # ADR-0002 — P1 : source d'entrée, construire ou réutiliser, oracles et fuzzing
 
-Statut : proposé
+Statut : accepté le 2026-11-06
 Date : 2026-11-06
 Responsable : Mélissa Gries (maintenance du dépôt)
 
@@ -27,11 +27,11 @@ licence `Apache-2.0 OR MIT`, CI gratuite sur runners standards.
   `bolero` (stable possible, moins répandu) ; tests de propriétés seuls (`proptest`,
   stable, mais exploration guidée par la couverture absente).
 
-## Décision (proposée)
+## Décision
 
-| Sujet | Proposition |
+| Sujet | Décision |
 | --- | --- |
-| Source | Fichier entier lu en mémoire, refusé au-delà de `max_input_bytes` (nouvelle limite, 512 Mio par défaut) avant toute allocation. Le parseur ne voit qu'un trait `Source` (longueur `u64`, lecture d'une plage bornée) : une source par plages pourra remplacer la source mémoire sans toucher au parseur. Pas de `mmap` |
+| Source | Fichier entier lu en mémoire sous `max_input_bytes` (nouvelle limite, 512 Mio par défaut), vérifiée pendant la lecture et, si la taille annoncée est fournie, avant toute lecture. Le parseur de structure (xref, objets) ne voit qu'un trait `Source` (longueur `u64`, lecture d'une plage bornée), introduit avec l'accès aléatoire de la tranche xref : une source par plages pourra remplacer la source mémoire sans toucher au parseur. Le lexer travaille sur une tranche d'octets fournie par la source. Pas de `mmap` |
 | Offsets | `u64` partout dans le format ; conversion vers `usize` vérifiée à la frontière de la source |
 | Fichiers abîmés | P1 strict : en-tête, `startxref`, tables et trailer doivent être cohérents, sinon erreur `Malformed` localisée (offset, objet). Pas de reconstruction de xref en P1 ; capacité « réparation » à part, avec son propre corpus |
 | Capacités absentes | Erreur `Unsupported(Capability)` explicite : xref streams, object streams, chiffrement, filtres non implémentés. Jamais de résultat partiel silencieux |
@@ -45,7 +45,9 @@ licence `Apache-2.0 OR MIT`, CI gratuite sur runners standards.
 ## Conséquences et validation
 
 - `ResourceLimits` gagne `max_input_bytes` ; test limite exacte acceptée, limite + 1
-  refusée sans allocation.
+  refusée, capacité du tampon jamais au-delà de la limite. Sans taille annoncée, la
+  croissance par doublement peut tenir brièvement l'ancien et le nouveau tampon
+  (environ 1,5 × la limite) ; avec la taille du fichier, une seule allocation.
 - Chaque tranche P1 livre ses cas invalides (troncature, débordement d'entier, cycle
   `/Prev`, profondeur) en fixtures générées par `scripts/make-fixtures.mjs`, documentées
   dans le manifeste ; aucun PDF privé ni corpus téléchargé pendant les tests.

@@ -1,10 +1,18 @@
 use std::fmt;
+use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Cumulative limits applied to one document or one task.
+///
+/// Non-exhaustive: start from `ResourceLimits::default()` and adjust fields, so
+/// that new limits can be added without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ResourceLimits {
+    /// Size of the whole input file. Enforced while reading, and before reading
+    /// when the caller passes the announced file size as a hint.
+    pub max_input_bytes: u64,
     pub max_decoded_bytes: u64,
     pub max_objects_visited: u64,
     pub max_nesting_depth: u32,
@@ -14,6 +22,7 @@ impl Default for ResourceLimits {
     /// Conservative starting values, to be calibrated with the P0 corpus.
     fn default() -> Self {
         Self {
+            max_input_bytes: 512 * 1024 * 1024,
             max_decoded_bytes: 256 * 1024 * 1024,
             max_objects_visited: 1_000_000,
             max_nesting_depth: 64,
@@ -22,7 +31,9 @@ impl Default for ResourceLimits {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LimitKind {
+    InputBytes,
     DecodedBytes,
     ObjectsVisited,
     NestingDepth,
@@ -31,8 +42,40 @@ pub enum LimitKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
-    LimitExceeded { kind: LimitKind, limit: u64 },
+    LimitExceeded {
+        kind: LimitKind,
+        limit: u64,
+    },
     Cancelled,
+    /// The input breaks the PDF syntax at `offset` (byte position in the file).
+    Malformed {
+        offset: u64,
+        kind: MalformedKind,
+    },
+    /// The input ends inside a construct that started before `offset`.
+    Truncated {
+        offset: u64,
+    },
+    /// Reading the input failed.
+    Io(io::ErrorKind),
+}
+
+/// Precise reason for an `Error::Malformed`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MalformedKind {
+    /// A delimiter that cannot start a token here, such as a lone `)` or `>`.
+    UnexpectedDelimiter,
+    /// Bytes that start like a number but do not form one, such as `-` or `1x`.
+    InvalidNumber,
+    /// A number whose value does not fit the supported range.
+    NumberOutOfRange,
+    /// A byte other than a hexadecimal digit or white space in a hexadecimal string.
+    InvalidHexDigit,
+    /// A `#` in a name not followed by two hexadecimal digits.
+    InvalidNameEscape,
+    /// A name containing the byte 0, which ISO 32000 forbids.
+    NullInName,
 }
 
 impl fmt::Display for Error {
@@ -42,6 +85,13 @@ impl fmt::Display for Error {
                 write!(f, "resource limit exceeded: {kind:?} (limit {limit})")
             }
             Self::Cancelled => f.write_str("operation cancelled"),
+            Self::Malformed { offset, kind } => {
+                write!(f, "malformed PDF syntax at byte {offset}: {kind:?}")
+            }
+            Self::Truncated { offset } => {
+                write!(f, "input ends inside a construct started at byte {offset}")
+            }
+            Self::Io(kind) => write!(f, "cannot read input: {kind}"),
         }
     }
 }
@@ -154,6 +204,7 @@ mod tests {
             max_decoded_bytes,
             max_objects_visited,
             max_nesting_depth: 2,
+            ..ResourceLimits::default()
         };
         Budget::new(limits, CancellationToken::new())
     }

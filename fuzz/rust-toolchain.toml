@@ -1,0 +1,4 @@
+# libFuzzer instrumentation needs nightly; the date pins it. Update by PR.
+[toolchain]
+channel = "nightly-2026-10-30"
+profile = "minimal"

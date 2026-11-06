@@ -1,0 +1,24 @@
+# Fuzz targets (ADR-0002). A separate workspace on a dated nightly toolchain,
+# never shipped and never part of the main workspace or its Cargo.lock.
+[package]
+name = "pdf-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0 OR MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+pdf-syntax = { path = "../crates/pdf-syntax" }
+
+[[bin]]
+name = "lexer"
+path = "fuzz_targets/lexer.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
