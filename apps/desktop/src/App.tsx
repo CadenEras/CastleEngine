@@ -133,7 +133,7 @@ export function App() {
   return (
     <main className="app">
       <header>
-        <h1>CastleEngine</h1>
+        <h1>CastlePDF</h1>
       </header>
       <section aria-labelledby="document-title" className="document">
         <h2 id="document-title">Document</h2>

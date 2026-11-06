@@ -1,9 +1,9 @@
-# CastleEngine
+# CastlePDF
 
-[![version](https://img.shields.io/github/v/tag/CadenEras/CastleEngine?include_prereleases&sort=semver&label=version)](https://github.com/CadenEras/CastleEngine/tags)
-[![rust](https://img.shields.io/github/actions/workflow/status/CadenEras/CastleEngine/rust.yml?branch=main&label=rust)](https://github.com/CadenEras/CastleEngine/actions/workflows/rust.yml)
-[![desktop](https://img.shields.io/github/actions/workflow/status/CadenEras/CastleEngine/desktop.yml?branch=main&label=desktop)](https://github.com/CadenEras/CastleEngine/actions/workflows/desktop.yml)
-[![agent-config](https://img.shields.io/github/actions/workflow/status/CadenEras/CastleEngine/agent-config.yml?branch=main&label=agent-config)](https://github.com/CadenEras/CastleEngine/actions/workflows/agent-config.yml)
+[![version](https://img.shields.io/github/v/tag/CadenEras/CastlePDF?include_prereleases&sort=semver&label=version)](https://github.com/CadenEras/CastlePDF/tags)
+[![rust](https://img.shields.io/github/actions/workflow/status/CadenEras/CastlePDF/rust.yml?branch=main&label=rust)](https://github.com/CadenEras/CastlePDF/actions/workflows/rust.yml)
+[![desktop](https://img.shields.io/github/actions/workflow/status/CadenEras/CastlePDF/desktop.yml?branch=main&label=desktop)](https://github.com/CadenEras/CastlePDF/actions/workflows/desktop.yml)
+[![agent-config](https://img.shields.io/github/actions/workflow/status/CadenEras/CastlePDF/agent-config.yml?branch=main&label=agent-config)](https://github.com/CadenEras/CastlePDF/actions/workflows/agent-config.yml)
 
 [![Rust](https://img.shields.io/badge/Rust-1.99.1-B7410E?logo=rust&logoColor=white)](rust-toolchain.toml)
 [![Node.js](https://img.shields.io/badge/Node.js-24.16.0-5FA04E?logo=nodedotjs&logoColor=white)](.github/workflows/desktop.yml)
@@ -19,7 +19,7 @@ sans interface. Priorités : exactitude, sécurité face aux documents non fiabl
 mémoire bornée, réactivité et maintenabilité.
 
 > [!WARNING]
-> Projet en phase de fondations. **CastleEngine ne lit pas encore de PDF** : la phase
+> Projet en phase de fondations. **CastlePDF ne lit pas encore de PDF** : la phase
 > P0 livre l'architecture, le worker, les budgets de ressources et la CI ; la lecture
 > structurée arrive en P1. Aucune version n'est destinée à un usage réel.
 

@@ -42,7 +42,7 @@ export const fixtures = {
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] '
       + '/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
-    stream('BT /F1 24 Tf 72 770 Td (CastleEngine minimal fixture) Tj ET'),
+    stream('BT /F1 24 Tf 72 770 Td (CastlePDF minimal fixture) Tj ET'),
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
   ]),
 };

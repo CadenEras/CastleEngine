@@ -30,7 +30,7 @@ Windows et macOS. Proposée le 2026-11-05, acceptée sans modification le 2026-1
 | Rust | 1.99.1 exacte via `rust-toolchain.toml`, édition 2024, MSRV = 1.99 |
 | Node / npm | Node 24 LTS, npm 11 ; versions exactes à fixer dans la CI |
 | Tauri / React / TS / Vite | Crate `tauri` 2.12.5, CLI et `@tauri-apps/api` 2.12.4, React 19.3.1, Vite 8.3.6, Vitest 5.1.0, ESLint 10.14.0. **TypeScript 6.0.3** et non 7.0.2 : `typescript-eslint` 8.72.1 exige TypeScript < 6.1. Versions exactes dans `package-lock.json` et `Cargo.lock` |
-| Identifiant d'application | `io.github.cadeneras.castleengine` (persistant : chemins de données par OS) |
+| Identifiant d'application | `io.github.cadeneras.castlepdf` (persistant : chemins de données par OS). Initialement `io.github.cadeneras.castleengine`, changé le 2026-11-06 avec le renommage en CastlePDF, avant toute distribution |
 | Lancement du worker | Binaire `pdf-worker` à côté de l'exécutable du shell, lancé par `std::process`, sans plugin shell Tauri. L'empaquetage en sidecar est traité avec les installateurs |
 | Permissions Tauri | Commandes applicatives déclarées dans `build.rs` ; capability `default` limitée à l'écoute d'événements et aux deux commandes du worker ; CSP sans script distant ni `unsafe-inline` hors développement |
 | OS minimums | Windows 10 22H2 / 11 x64 en priorité ; macOS 13+ ; Linux x86_64 avec WebKitGTK 4.1 (base Ubuntu 22.04). ARM64 hors périmètre P0 |

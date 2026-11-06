@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "CastleEngine",
+  "productName": "CastlePDF",
   "version": "../package.json",
-  "identifier": "io.github.cadeneras.castleengine",
+  "identifier": "io.github.cadeneras.castlepdf",
   "build": {
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CastleEngine",
+        "title": "CastlePDF",
         "width": 1200,
         "height": 800,
         "minWidth": 640,

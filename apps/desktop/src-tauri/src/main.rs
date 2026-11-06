@@ -32,7 +32,7 @@ fn main() -> ExitCode {
             let worker =
                 WorkerHandle::start(worker::bundled_worker_path(), move |event: JobEvent| {
                     if let Err(error) = handle.emit(JOB_EVENT, event) {
-                        eprintln!("castle-engine: cannot publish job event: {error}");
+                        eprintln!("castle-pdf: cannot publish job event: {error}");
                     }
                 });
             app.manage(worker);
@@ -51,7 +51,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("castle-engine: cannot start: {error}");
+            eprintln!("castle-pdf: cannot start: {error}");
             ExitCode::FAILURE
         }
     }

@@ -81,7 +81,7 @@ sudo apt-get install -y build-essential pkg-config curl libwebkit2gtk-4.1-dev li
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 . "$HOME/.cargo/env"
 # Node 24 : via nvm ou le paquet officiel ; vérifier `node --version`.
-git clone https://github.com/CadenEras/CastleEngine.git && cd CastleEngine
+git clone https://github.com/CadenEras/CastlePDF.git && cd CastlePDF
 rustup toolchain install   # version de rust-toolchain.toml
 npm --prefix apps/desktop ci
 npm --prefix apps/desktop run tauri -- build --no-bundle -- --locked
