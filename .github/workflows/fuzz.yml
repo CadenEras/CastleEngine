@@ -1,0 +1,77 @@
+name: fuzz
+# Coverage-guided fuzzing (ADR-0002), bounded in time and memory. Not a required
+# check yet: it runs weekly, on demand, and on pull requests touching the parser.
+on:
+  schedule:
+    - cron: "41 3 * * 2"
+  pull_request:
+    paths:
+      - crates/pdf-syntax/**
+      - crates/pdf-document/**
+      - fuzz/**
+      - .github/workflows/fuzz.yml
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Fuzzing time per target, in seconds
+        default: "300"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_FUZZ_VERSION: "0.13.2"
+
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [lexer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: fuzz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; update by reviewed PR
+        with:
+          persist-credentials: false
+      - name: Install pinned nightly (fuzz/rust-toolchain.toml)
+        run: rustup toolchain install
+      # Only main writes the cache, so a pull request cannot poison it.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3; update by reviewed PR
+        with:
+          workspaces: fuzz
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Idempotent: a cached binary of the same version is kept, any other replaced.
+      - name: Install cargo-fuzz
+        run: cargo install --locked "cargo-fuzz@$CARGO_FUZZ_VERSION"
+      - name: Seed the corpus with the public fixtures
+        run: |
+          mkdir -p "corpus/${{ matrix.target }}"
+          cp ../tests/corpus/public/*.pdf "corpus/${{ matrix.target }}/"
+      - name: Fuzz
+        env:
+          SECONDS_BUDGET: ${{ inputs.seconds || '300' }}
+        # The budget must leave room for the build within timeout-minutes, so
+        # that a finding fails the job (and uploads its input) instead of a timeout.
+        run: >
+          case "$SECONDS_BUDGET" in ''|*[!0-9]*) echo "seconds must be a number"; exit 1;; esac;
+          [ "$SECONDS_BUDGET" -le 1200 ] || { echo "seconds must be <= 1200"; exit 1; };
+          cargo fuzz run "${{ matrix.target }}" "corpus/${{ matrix.target }}" --
+          -max_total_time="$SECONDS_BUDGET" -rss_limit_mb=2048 -max_len=1048576
+          -timeout=10 -dict=dict/pdf.dict
+      - name: Keep crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2; update by reviewed PR
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

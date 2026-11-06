@@ -26,10 +26,9 @@ mod tests {
     use pdf_syntax::{CancellationToken, LimitKind, ResourceLimits};
 
     fn budget_with(max_objects_visited: u64, token: CancellationToken) -> Budget {
-        let limits = ResourceLimits {
-            max_objects_visited,
-            ..ResourceLimits::default()
-        };
+        // ResourceLimits is non-exhaustive: start from the defaults.
+        let mut limits = ResourceLimits::default();
+        limits.max_objects_visited = max_objects_visited;
         Budget::new(limits, token)
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "pdf-syntax"
-description = "PDF objects, sources and shared resource budgets"
+description = "PDF syntax: tokenizer, input sources and shared resource budgets"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +9,7 @@ license.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Property tests (ADR-0002); test-only, MIT OR Apache-2.0.
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
