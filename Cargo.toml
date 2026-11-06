@@ -3,7 +3,7 @@ resolver = "3"
 members = ["apps/desktop/src-tauri", "crates/pdf-syntax", "crates/pdf-worker"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 edition = "2024"
 rust-version = "1.99"
 publish = false

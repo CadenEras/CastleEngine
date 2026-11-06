@@ -92,6 +92,7 @@ La liste complète des commandes, dont le build release et la mesure mémoire, e
 | [Sécurité](docs/SECURITY.md) | Menaces PDF, Tauri, sauvegarde, dépendances |
 | [Performance](docs/PERFORMANCE.md) | Budgets, mesures mémoire et relevés |
 | [Git](docs/GIT.md) | Branches, commits, PR, versions et tags |
+| [Journal des versions](CHANGELOG.md) | Changements par version |
 
 ## Contribuer
 
