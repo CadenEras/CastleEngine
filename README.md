@@ -12,6 +12,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6?logo=typescript&logoColor=white)](apps/desktop/package.json)
 [![Vite](https://img.shields.io/badge/Vite-8.3.6-646CFF?logo=vite&logoColor=white)](apps/desktop/package.json)
 [![Plateformes](https://img.shields.io/badge/plateformes-Windows%20%7C%20macOS%20%7C%20Linux-informational)](docs/adr/0001-p0-foundations.md)
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0%20OR%20MIT-blue)](#licence)
 
 Moteur PDF écrit en Rust et application desktop hors ligne (Tauri 2, React, TypeScript)
 pour Windows, macOS et Linux. Le moteur est développé dans ce dépôt et reste utilisable
@@ -107,5 +108,11 @@ voir [CLAUDE.md](CLAUDE.md) et [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md).
 
 ## Licence
 
-Aucune licence n'est encore choisie : le code reste sous droits réservés jusqu'à
-la décision, qui sera enregistrée dans un ADR.
+CastlePDF est distribué sous double licence, au choix :
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT ([LICENSE-MIT](LICENSE-MIT))
+
+Sauf mention contraire explicite, toute contribution soumise pour inclusion dans le
+projet, au sens de la licence Apache-2.0, est placée sous cette même double licence,
+sans condition supplémentaire.

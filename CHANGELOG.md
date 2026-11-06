@@ -7,6 +7,11 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
 
 ## [Non publié]
 
+### Ajouté
+
+- Licence : double licence `Apache-2.0 OR MIT` (`LICENSE-APACHE`, `LICENSE-MIT`,
+  champs `license` des paquets Cargo et npm).
+
 ### Modifié
 
 - Projet renommé CastlePDF (auparavant CastleEngine, homonyme d'un moteur de jeu) :
