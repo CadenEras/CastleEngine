@@ -269,7 +269,7 @@ dependencies = [
 
 [[package]]
 name = "castle-engine-desktop"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "pdf-worker",
  "serde",
@@ -2145,11 +2145,11 @@ dependencies = [
 
 [[package]]
 name = "pdf-syntax"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 
 [[package]]
 name = "pdf-worker"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "pdf-syntax",
 ]

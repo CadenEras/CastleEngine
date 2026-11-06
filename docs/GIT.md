@@ -115,6 +115,10 @@ Tauri et le package frontend reprennent la même version de release.
 - Après `1.0` : rupture MAJOR, fonctionnalité compatible MINOR, correctif PATCH.
   Conventional Commits aide à calculer la version, sans remplacer la revue du contrat.
 - Préversions : `0.2.0-alpha.1`, `0.2.0-beta.1`, `0.2.0-rc.1`.
+  Jusqu'à la première version exploitable, chaque fin de phase de `docs/ROADMAP.md`
+  donne une préversion alpha : P0 → `v0.1.0-alpha.1`, P1 → `v0.1.0-alpha.2`, etc.
+  Chaque tag a sa release GitHub marquée « pre-release », notes tirées de `CHANGELOG.md`,
+  sans binaires tant que le packaging et la signature ne sont pas en place.
 - Tag annoté `v0.2.0`, attaché au commit effectivement construit et validé.
   Signer les tags si une infrastructure de clés est en place ; ne pas inventer une clé.
 - Ne jamais déplacer un tag publié ; publier une nouvelle version ou retirer une
