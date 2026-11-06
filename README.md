@@ -1,70 +1,110 @@
-# Kit agentique — moteur PDF Rust + Tauri / React / TypeScript
+# CastleEngine
 
-Configuration éditable préparée le **3 novembre 2026**. Elle accompagne un moteur maison
-et une application desktop Windows/macOS/Linux. Aucun moteur PDF n'est encore implémenté.
-« Udags Git » est interprété comme **usages Git** ; les **tags** sont également couverts.
+[![version](https://img.shields.io/github/v/tag/CadenEras/CastleEngine?include_prereleases&sort=semver&label=version)](https://github.com/CadenEras/CastleEngine/tags)
+[![rust](https://img.shields.io/github/actions/workflow/status/CadenEras/CastleEngine/rust.yml?branch=main&label=rust)](https://github.com/CadenEras/CastleEngine/actions/workflows/rust.yml)
+[![desktop](https://img.shields.io/github/actions/workflow/status/CadenEras/CastleEngine/desktop.yml?branch=main&label=desktop)](https://github.com/CadenEras/CastleEngine/actions/workflows/desktop.yml)
+[![agent-config](https://img.shields.io/github/actions/workflow/status/CadenEras/CastleEngine/agent-config.yml?branch=main&label=agent-config)](https://github.com/CadenEras/CastleEngine/actions/workflows/agent-config.yml)
 
-## Installation
+[![Rust](https://img.shields.io/badge/Rust-1.99.1-B7410E?logo=rust&logoColor=white)](rust-toolchain.toml)
+[![Node.js](https://img.shields.io/badge/Node.js-24.16.0-5FA04E?logo=nodedotjs&logoColor=white)](.github/workflows/desktop.yml)
+[![Tauri](https://img.shields.io/badge/Tauri-2.12-24C8D8?logo=tauri&logoColor=white)](apps/desktop/src-tauri/Cargo.toml)
+[![React](https://img.shields.io/badge/React-19.3.1-087EA4?logo=react&logoColor=white)](apps/desktop/package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6?logo=typescript&logoColor=white)](apps/desktop/package.json)
+[![Vite](https://img.shields.io/badge/Vite-8.3.6-646CFF?logo=vite&logoColor=white)](apps/desktop/package.json)
+[![Plateformes](https://img.shields.io/badge/plateformes-Windows%20%7C%20macOS%20%7C%20Linux-informational)](docs/adr/0001-p0-foundations.md)
 
-1. Copier **le contenu** de ce dossier à la racine du futur dépôt, y compris `.claude`
-   et `.github`. Dans un dépôt existant, fusionner les fichiers de configuration après
-   lecture du diff, sans écraser ses conventions ou ses réglages personnels.
-2. Disposer de Node.js 22 ou supérieur et de Claude Code. Aucun paquet npm n'est
-   nécessaire pour les hooks et la validation du kit.
-3. Depuis la racine du dépôt, vérifier les fichiers :
+Moteur PDF écrit en Rust et application desktop hors ligne (Tauri 2, React, TypeScript)
+pour Windows, macOS et Linux. Le moteur est développé dans ce dépôt et reste utilisable
+sans interface. Priorités : exactitude, sécurité face aux documents non fiables,
+mémoire bornée, réactivité et maintenabilité.
 
-   ```sh
-   node scripts/validate-agent-kit.mjs
-   node --test scripts/tests/hooks.test.mjs
-   claude --version
-   ```
+> [!WARNING]
+> Projet en phase de fondations. **CastleEngine ne lit pas encore de PDF** : la phase
+> P0 livre l'architecture, le worker, les budgets de ressources et la CI ; la lecture
+> structurée arrive en P1. Aucune version n'est destinée à un usage réel.
 
-4. Lire les hooks puis lancer `claude`. Accepter la confiance du dépôt seulement
-   après lecture de sa configuration. Dans la session, consulter `/status`,
-   `/permissions`, `/hooks` et `/agents` ; vérifier que les fichiers projet sont chargés.
-   Si `.claude/agents` vient d'être créé dans une session déjà ouverte, redémarrer.
-5. Commencer par P0 dans [la feuille de route](docs/ROADMAP.md). Installer Rust,
-   les dépendances système Tauri et le gestionnaire JS pendant cette phase.
+## État
 
-Le mode partagé `acceptEdits` accepte les modifications ordinaires. Les commandes
-shell non autorisées restent contrôlées ; aucune autorisation générale de shell,
-de réseau, de serveur MCP ou de publication n'est fournie.
+| Phase | Contenu | État |
+| --- | --- | --- |
+| P0 — fondations | Workspace, UI vide, protocole worker, budgets, corpus, CI trois OS | Terminée (`v0.1.0-alpha.1`) |
+| P1 — lecture structurée | Tokenizer, objets, xref classique, pages, CLI de diagnostic | À venir |
+| P2 et suivantes | Rendu, texte, écriture, annotations, fonctions avancées | Voir la [feuille de route](docs/ROADMAP.md) |
 
-## Où lire quoi
+Le support PDF sera publié sous forme de matrice de capacités. Toute capacité absente
+renvoie une erreur explicite plutôt qu'un résultat approximatif.
 
-| Fichier | Utilité |
-| --- | --- |
-| [CLAUDE.md](CLAUDE.md) | Mission, invariants et manière de travailler |
-| [Configuration de l'agent](docs/AGENT-SETUP.md) | Permissions, hooks, skills, agents, outils, limites |
-| [Architecture](docs/ARCHITECTURE.md) | Frontières Rust/UI/worker et contrats |
-| [Commandes](docs/COMMANDS.md) | Commandes disponibles et commandes à créer en P0 |
-| [Git](docs/GIT.md) | Branches, commits, PR, tags et releases |
-| [Qualité](docs/QUALITY.md) | Tests et contrôles par niveau |
-| [Sécurité](docs/SECURITY.md) | Menaces PDF, Tauri, sauvegarde et dépendances |
-| [Performance](docs/PERFORMANCE.md) | Mesures, mémoire, cache et objectifs initiaux |
-| [Phasage](docs/ROADMAP.md) | Jalons, livrables et critères de sortie |
-| [Sources vérifiées](docs/SOURCES.md) | Documentation officielle et compatibilité |
-
-## Utilisation dans Claude Code
+## Architecture
 
 ```text
-/implement-feature P0 : initialiser le workspace selon docs/ROADMAP.md
-/review-diff
-/validate-pdf tests/corpus/public/minimal.pdf
-/prepare-release 0.1.0
+crates/
+  pdf-syntax/      budgets de ressources, annulation (puis lexer, objets, xref)
+  pdf-worker/      processus isolé : trames bornées, protocole versionné, annulation
+apps/desktop/
+  src/             interface React / TypeScript, sans privilège
+  src-tauri/       shell Tauri : lance le worker, commandes IPC validées côté Rust
 ```
 
-Les deux premières procédures travaillent sur le dépôt. La troisième attend un moteur
-et un fichier de test autorisé ; la dernière prépare un dossier de release sans publier.
-Les exemples ne supposent pas qu'un fichier PDF ou le workspace existe déjà.
+Le cœur Rust ne dépend ni de Tauri, ni de React, ni de Node.js. Le traitement des
+documents se fait dans un sous-processus que l'application peut annuler ou arrêter.
+Détails : [architecture](docs/ARCHITECTURE.md) et
+[ADR-0001](docs/adr/0001-p0-foundations.md).
 
-Pour une tâche complexe : demander à `architect` une analyse ; confier une tranche à
-`rust-engineer` ou `frontend-engineer`, puis une relecture à `reviewer` et les cas PDF
-à `pdf-specialist` ou `qa-engineer`. Éviter d'appeler les six rôles pour une petite tâche.
+## Principes de sécurité
 
-## Validation et portée
+- Chaque document, police ou image est une entrée non fiable : limites cumulatives
+  vérifiées avant allocation, annulation et erreurs explicites.
+- Aucun JavaScript PDF, aucun lancement de pièce jointe, aucun accès réseau implicite.
+- `unsafe` interdit dans le code du projet ; permissions Tauri minimales et CSP stricte.
+- Le document source n'est jamais écrasé pendant une lecture ou une sauvegarde échouée.
 
-Le workflow `.github/workflows/agent-config.yml` vérifie le kit sur trois OS.
-Les vérifications Rust, UI et packaging devront être ajoutées en P0 : elles ne sont
-pas simulées ici par des étapes vertes qui ignoreraient un workspace absent.
-La validation locale et ses limites sont consignées dans `docs/VALIDATION.md`.
+Voir la [politique de sécurité](docs/SECURITY.md).
+
+## Démarrer
+
+Prérequis : [rustup](https://rustup.rs/) (la version exacte vient de
+`rust-toolchain.toml`), Node.js 24 et, sous Linux, les
+[dépendances système de Tauri](https://v2.tauri.app/start/prerequisites/) (WebKitGTK 4.1).
+
+```sh
+# Contrôles Rust
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+
+# Application desktop
+npm --prefix apps/desktop ci
+npm --prefix apps/desktop run tauri dev
+```
+
+La liste complète des commandes, dont le build release et la mesure mémoire, est dans
+[docs/COMMANDS.md](docs/COMMANDS.md).
+
+## Documentation
+
+| Document | Contenu |
+| --- | --- |
+| [Feuille de route](docs/ROADMAP.md) | Phases, livrables et critères de sortie |
+| [Architecture](docs/ARCHITECTURE.md) | Frontières Rust / UI / worker et contrats |
+| [Décisions (ADR)](docs/adr/) | Choix structurants acceptés |
+| [Commandes](docs/COMMANDS.md) | Contrôles locaux et CI |
+| [Qualité](docs/QUALITY.md) | Niveaux de tests et contrôles |
+| [Sécurité](docs/SECURITY.md) | Menaces PDF, Tauri, sauvegarde, dépendances |
+| [Performance](docs/PERFORMANCE.md) | Budgets, mesures mémoire et relevés |
+| [Git](docs/GIT.md) | Branches, commits, PR, versions et tags |
+
+## Contribuer
+
+Les branches sont courtes et chaque changement passe par une pull request. Les titres
+suivent [Conventional Commits](https://www.conventionalcommits.org/) et les PR sont
+fusionnées en squash une fois la CI verte sur les trois OS. Les versions suivent
+[SemVer](https://semver.org/) avec des tags annotés `vX.Y.Z` ; une préversion
+`alpha` marque la fin de chaque phase. Détails dans [docs/GIT.md](docs/GIT.md).
+
+Le dépôt inclut une configuration pour Claude Code (règles, agents, skills et hooks) ;
+voir [CLAUDE.md](CLAUDE.md) et [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md).
+
+## Licence
+
+Aucune licence n'est encore choisie : le code reste sous droits réservés jusqu'à
+la décision, qui sera enregistrée dans un ADR.

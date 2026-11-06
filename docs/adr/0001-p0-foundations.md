@@ -1,8 +1,8 @@
 # ADR-0001 — Fondations P0 : toolchains, workspace, worker et budgets
 
-Statut : proposé
+Statut : accepté le 2026-11-06
 Date : 2026-11-05
-Responsable : à désigner (mainteneur du dépôt)
+Responsable : Mélissa Gries (maintenance du dépôt)
 
 ## Contexte et contraintes
 
@@ -10,7 +10,7 @@ P0 doit livrer un workspace, une UI vide, un protocole worker, des budgets, un c
 et une CI sur trois OS (`docs/ROADMAP.md`). Versions relevées le 2026-11-05 (canal
 stable Rust, `npm view`, crates.io), puis installées et compilées ensemble : localement
 sous Windows 11 x64 (Rust 1.99.1, Node 24.16.0, npm 11.6.4) et en CI sur Ubuntu,
-Windows et macOS. Le statut reste « proposé » jusqu'à acceptation par un mainteneur.
+Windows et macOS. Proposée le 2026-11-05, acceptée sans modification le 2026-11-06.
 
 ## Options
 
@@ -23,9 +23,9 @@ Windows et macOS. Le statut reste « proposé » jusqu'à acceptation par un mai
   trames préfixées par une longueur bornée (borne vérifiée avant allocation).
 - **Dépendances du cœur en P0** : aucune (std seule) ou bibliothèques dès maintenant.
 
-## Décision (proposée)
+## Décision
 
-| Sujet | Proposition |
+| Sujet | Décision |
 | --- | --- |
 | Rust | 1.99.1 exacte via `rust-toolchain.toml`, édition 2024, MSRV = 1.99 |
 | Node / npm | Node 24 LTS, npm 11 ; versions exactes à fixer dans la CI |
@@ -51,7 +51,8 @@ Windows et macOS. Le statut reste « proposé » jusqu'à acceptation par un mai
   compteur, annulation observée en cours de tâche, trame trop grande rejetée avant
   allocation, trame tronquée signalée.
 - Fixture synthétique : `tests/corpus/public/minimal.pdf`, générée et vérifiée par script.
-  Plancher mémoire Windows : `docs/perf/2026-11-05-p0-windows.md` ; macOS et Linux à mesurer.
+  Plancher mémoire : référence Windows `docs/perf/2026-11-05-p0-windows.md` ;
+  relevés indicatifs macOS et Linux dans `docs/PERFORMANCE.md`.
 - Isolation OS du worker (Job Objects / AppContainer, sandbox macOS, seccomp/Landlock) :
   à étudier par OS ; aucune isolation n'est revendiquée avant tests dédiés.
 - Retour arrière : les versions sont modifiables par PR ; le protocole est versionné

@@ -34,3 +34,5 @@ jobs:
         run: node --test scripts/tests/hooks.test.mjs
       - name: Check synthetic fixtures
         run: node --test scripts/tests/fixtures.test.mjs
+      - name: README version badges
+        run: node --test scripts/tests/readme.test.mjs
