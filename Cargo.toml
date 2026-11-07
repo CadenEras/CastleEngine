@@ -4,6 +4,7 @@ members = [
     "apps/desktop/src-tauri",
     "crates/pdf-cli",
     "crates/pdf-document",
+    "crates/pdf-render",
     "crates/pdf-syntax",
     "crates/pdf-worker",
 ]
@@ -17,6 +18,7 @@ license = "Apache-2.0 OR MIT"
 
 [workspace.dependencies]
 pdf-document = { path = "crates/pdf-document" }
+pdf-render = { path = "crates/pdf-render" }
 pdf-syntax = { path = "crates/pdf-syntax" }
 pdf-worker = { path = "crates/pdf-worker" }
 

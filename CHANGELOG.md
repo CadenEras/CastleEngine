@@ -30,6 +30,29 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
   l'entrée libre masquer l'objet ; la fixture évite cette forme, les tests unitaires la couvrent.
 - Fixture `flate.pdf` (encodeur zlib déterministe du générateur), comparaison de chaque
   flux décodé avec `qpdf --filtered-stream-data`, cible de fuzzing `flate`.
+- Crate `pdf-render` : interpréteur de flux de contenu (ISO 32000-2, 8) — état graphique
+  (`q Q cm w J j M d ri i gs`), chemins, remplissages (non nul, pair-impair), contours
+  (épaisseur, extrémités, jonctions, tirets découpés en espace utilisateur, ligne
+  d'épaisseur 0), découpe, couleurs `DeviceGray`/`DeviceRGB`/`DeviceCMYK` (conversion
+  ISO 10.4.2.4, sans gestion de couleur), alpha constant de `/ExtGState`, rotation de
+  page, `CropBox` et `/UserUnit`. Rasterisation par `vello_cpu` 0.3.0 derrière un
+  adaptateur unique. Texte, découpe par le texte, images, XObjects, dégradés, motifs,
+  autres espaces de couleur (dont `Default*`), modes de fusion, masques, fonctions de
+  transfert et contenu optionnel ne sont pas encore rendus : `Rendering::skipped` les
+  liste, jamais en silence. Lecture stricte : erreurs de contenu localisées
+  (`Error::Content`), opérandes vérifiés, contenu non terminé refusé (`Unterminated`),
+  pas de réparation. `RenderLimits` borne pixels (16 384 px par côté au plus), opérations,
+  imbrication `q`, découpes actives et travail estimé du rasteriseur (segments, tuiles
+  traversées, aire couverte, contours, tirets) ; coordonnées appareil bornées à 10^12.
+- `pdf-document` : `Page::user_unit` (`/UserUnit`, `InvalidUserUnit` si invalide).
+- `castle-pdf render <fichier> <page> <sortie.ppm> [--scale <facteur>]` : rendu d'une
+  page en PPM, sans jamais écraser un fichier.
+- Fixture `shapes.pdf` (3 pages), oracle de rendu `pdftoppm` en CI (comparaison tolérante
+  aux bords dans les deux sens, défauts contrôlés qui doivent être détectés), cible de
+  fuzzing `render` (échelle variable).
+  Divergence connue : DeviceCMYK, cyan (0, 255, 255) chez CastlePDF selon ISO 10.4.2.4
+  contre (0, 173, 239) chez pdftoppm 22.02 ; à revoir avec la gestion de couleur.
+- `pdf-document` : `StructureErrorKind::InvalidContents` pour un `/Contents` invalide.
 
 ## [0.1.0-alpha.2] — 2026-11-07
 

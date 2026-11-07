@@ -71,7 +71,7 @@ cargo install --locked cargo-fuzz@0.13.2
 cargo fuzz run lexer -- -max_total_time=300 -rss_limit_mb=2048 -dict=dict/pdf.dict   # ou objects
 ```
 
-Cibles : `lexer`, `objects`, `xref`, `document`, `flate`. Un crash est écrit dans `fuzz/artifacts/<cible>/` ; le minimiser (`cargo fuzz tmin`)
+Cibles : `lexer`, `objects`, `xref`, `document`, `flate`, `render` (contenu de page arbitraire ; graines dans `fuzz/seeds/render`). Un crash est écrit dans `fuzz/artifacts/<cible>/` ; le minimiser (`cargo fuzz tmin`)
 puis en faire un test de régression dans la crate concernée. La CI (`fuzz.yml`) lance
 5 minutes par cible chaque semaine et sur les PR touchant le parseur.
 
@@ -81,12 +81,24 @@ compare, pour chaque fixture de `tests/corpus/public` (toutes valides), les entr
 `qpdf --show-xref`, chaque flux décodé à `qpdf --filtered-stream-data` et l'ordre des
 pages à `qpdf --show-pages`. Sans `CASTLE_QPDF`, le test est sauté ; le workflow `oracle` l'impose.
 
+Oracle de rendu `pdftoppm` (poppler, GPL, ADR-0003, jamais livré ni lié) : avec
+poppler-utils installé, `CASTLE_PDFTOPPM="$(command -v pdftoppm)" cargo test -p pdf-render --locked --test pdftoppm_oracle -- --nocapture`
+compare des pages de `shapes.pdf` à plusieurs échelles. Un pixel concorde s'il reste,
+canal par canal, à 16 niveaux près de l'intervalle des pixels de l'autre image dans son
+voisinage 3 × 3 (différences d'anticrénelage sur les bords), dans les deux sens ; au plus
+0,01 % de pixels discordants (0 mesuré avec poppler 22.02). Des défauts contrôlés (tiret
+effacé, décalage de 2 px, trou rempli) et la page DeviceCMYK, qui diffère par conception
+(conversion ISO 32000-2 10.4.2.4 contre approximation d'un profil d'impression par
+poppler), doivent être détectés : c'est le contrôle de sensibilité du critère. Le
+workflow `oracle` l'impose.
+
 ## CLI de diagnostic `castle-pdf` (crate `pdf-cli`)
 
-Interface effective, relevée sur `--help` (version 0.1.0-alpha.2) :
+Interface effective, relevée sur `--help` :
 
 ```sh
 cargo run -p pdf-cli -- inspect <fichier>   # castle-pdf inspect <fichier>
+cargo run -p pdf-cli -- render <fichier> <page> <sortie.ppm> [--scale <facteur>]
 cargo run -p pdf-cli -- --help                # ou -h
 cargo run -p pdf-cli -- --version
 ```
@@ -99,6 +111,15 @@ scientifique au-delà de 1e15). Seul un fichier régulier est lu. La structure d
 est affichée même si l'arbre des pages est invalide. Codes de sortie : 0 succès,
 1 document illisible (erreur sur la sortie d'erreur), 2 usage incorrect, 3 écriture du
 rapport impossible (pipe fermé). Limites par défaut de `ResourceLimits`.
+
+`render` rend une page (numérotée à partir de 1) sur fond blanc dans un nouveau fichier
+PPM binaire (P6), le format de `pdftoppm` ; l'échelle 1 vaut 72 pixels par pouce. Le
+fichier de sortie ne doit pas exister : l'image est écrite dans un fichier temporaire
+voisin puis publiée par lien dur, ce qui n'écrase jamais un fichier et ne laisse pas
+d'image partielle (le système de fichiers doit accepter les liens durs). Elle affiche la taille et les capacités
+utilisées par la page mais pas encore rendues (texte, images, XObjects…). Code 1 aussi
+quand le rendu échoue ou que l'image ne peut pas être créée. Limites par défaut de
+`RenderLimits`.
 
 Benchmarks, autres tests différentiels et vérifications de conformité seront ajoutés avec
 leurs fixtures et outils. Ne pas inventer d'option à `castle-pdf` : relire son `--help`.

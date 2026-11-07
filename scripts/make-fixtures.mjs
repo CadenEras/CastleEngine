@@ -253,6 +253,41 @@ export const fixtures = {
   // The same objects in a hybrid file: classic table plus /XRefStm stream.
   'hybrid.pdf': buildXrefStreamPdf(compressedPage('CastlePDF hybrid fixture'), 6,
     { hybrid: true }),
+  // Vector graphics for the renderer, with known probe areas (user space,
+  // y up). Page 1, 200 x 200: grey background; red fill (10..90, 10..70);
+  // blue 4-unit stroke of (110..190, 10..70) with round joins; green square
+  // rotated 45 degrees around (50, 120); yellow fill clipped to a circle of
+  // radius 30 around (150, 130); in the top strip (y 172..192): a DeviceCMYK
+  // cyan box, a red box at 50 % fill alpha (ExtGState), an even-odd ring and
+  // a dashed line [6 4] from x 130 to 190 at y 182. Its content is
+  // Flate-compressed and split in two streams in the middle of an operation.
+  // Page 2, 200 x 100 rotated 90 degrees: red over x 0..50.
+  'shapes.pdf': buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 6 0 R 9 0 R] /Count 3 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] '
+      + '/Resources << /ExtGState << /GS1 8 0 R >> >> /Contents [4 0 R 5 0 R] >>',
+    stream(zlibFixedHuffman('0.9 g 0 0 200 200 re f\n1 0 0 rg 10 10 80 60'),
+      ' /Filter /FlateDecode'),
+    stream(zlibFixedHuffman([
+      're f',
+      'q 0 0 1 RG 4 w 1 j 110 10 80 60 re S Q',
+      'q 1 0 0 1 50 120 cm 0.7071068 0.7071068 -0.7071068 0.7071068 0 0 cm',
+      '0 0.6 0 rg -20 -20 40 40 re f Q',
+      'q 180 130 m 180 146.57 166.57 160 150 160 c 133.43 160 120 146.57 120 130 c',
+      '120 113.43 133.43 100 150 100 c 166.57 100 180 113.43 180 130 c h W n',
+      '1 1 0 rg 110 90 80 80 re f Q',
+      'q /GS1 gs 1 0 0 rg 50 172 30 20 re f Q',
+      '0 g 90 172 30 20 re 98 178 14 8 re f*',
+      'q 0 G 2 w [6 4] 0 d 130 182 m 190 182 l S Q',
+    ].join('\n')), ' /Filter /FlateDecode'),
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Rotate 90 /Contents 7 0 R >>',
+    stream('1 0 0 rg 0 0 50 100 re f'),
+    '<< /Type /ExtGState /ca 0.5 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Contents 10 0 R >>',
+    stream('1 0 0 0 k 0 10 10 10 re f 0 1 0 0 k 10 10 10 10 re f '
+      + '0 0 1 0 k 0 0 10 10 re f 0 0 0 1 k 10 0 10 10 re f'),
+  ]),
   // The same page, then an incremental update replacing its content stream.
   'incremental.pdf': appendUpdate(
     buildPdf(onePage('CastlePDF original revision')),

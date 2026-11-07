@@ -70,7 +70,21 @@ toutes atteintes par le shell Tauri et jamais par `crates/*` : MPL-2.0 pour `css
 (`proc-macro-error`, macro de compilation du backend GTK Linux), à revoir avec Tauri 3.
 Codec dans le cœur : `miniz_oxide` 0.9.1 (Flate, `#![forbid(unsafe_code)]`, version
 exacte épinglée) et sa dépendance `adler2`, sans code natif (ADR-0003) ; sortie facturée
-au budget fenêtre par fenêtre. Dependabot propose chaque semaine les mises à jour Cargo, npm et actions ; le cache
+au budget fenêtre par fenêtre. Rasterisation dans `pdf-render` : `vello_cpu` 0.3.0
+(version exacte, sans `png`, `text` ni multithreading), seul module à l'appeler
+`raster.rs`. Inventaire de son graphe d'exécution (17 crates, toutes sous licence de la
+liste, aucun code natif ni accès réseau ; `build.rs` seulement dans `num-traits` et
+`thiserror`, sondes de version du compilateur) : `vello_cpu`, `vello_common` et
+`kurbo` sans `unsafe` ; `unsafe` présent dans `fearless_simd` (intrinsèques SIMD
+détectées à l'exécution), `bytemuck`, `hashbrown`, `smallvec`, `arrayvec`, `euclid`,
+`peniko`, `color`, `foldhash`, `log`, `num-traits`. Les entrées viennent du document :
+coordonnées appareil bornées (10^12), tirets découpés en espace utilisateur et comptés
+avant le tracé (une boucle sans fin de `kurbo` sur des tirets minuscules est ainsi
+évitée), travail estimé du rasteriseur (segments, tuiles traversées, aire couverte,
+contours, tirets) et découpes actives bornés par `RenderLimits`, côté du canevas limité à
+16 384 px (`vello_cpu` panique sur un débordement `u16` près de 65 535), aucune couche
+(`vello_cpu` fait échouer une assertion sur une couche non refermée), cible de fuzzing
+`render`. La rasterisation finale n'est pas annulable ; son coût est borné par ce budget. Dependabot propose chaque semaine les mises à jour Cargo, npm et actions ; le cache
 Rust de la CI n'est écrit que depuis `main`, jamais depuis une PR.
 
 CI de PR sans secrets, jeton en lecture seule, actions épinglées à un commit revu,

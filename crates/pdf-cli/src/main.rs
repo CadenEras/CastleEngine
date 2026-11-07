@@ -3,10 +3,14 @@
 //! `castle-pdf inspect <file>` reports the file structure (version, revisions,
 //! cross-reference entries, trailer keys) and the pages (ids, boxes, rotation).
 //! It never prints document content: no strings, streams or resource values,
-//! and only standard trailer key names. Exit codes: 0 success, 1 the document
-//! cannot be read, 2 usage error, 3 the report could not be written.
+//! and only standard trailer key names. `castle-pdf render` writes one page to
+//! a new PPM image. Exit codes: 0 success, 1 the document cannot be read or
+//! rendered, or the image cannot be created, 2 usage error, 3 the report could
+//! not be written.
 
 mod inspect;
+mod open;
+mod render;
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -16,12 +20,17 @@ castle-pdf — diagnostic tool of the CastlePDF engine
 
 Usage:
   castle-pdf inspect <file>   Report the file structure and the pages
+  castle-pdf render <file> <page> <output.ppm> [--scale <factor>]
+                              Render a page (numbered from 1) to a new PPM
+                              image; scale 1 is 72 pixels per inch
   castle-pdf --help, -h       Show this help
   castle-pdf --version        Show the version
 
-The report lists structure only, never document content. Exit codes: 0 success,
-1 the document cannot be read (the error says why), 2 usage error, 3 the report
-could not be written (for example a closed pipe).
+The report lists structure only, never document content. `render` never
+overwrites a file and lists what the page uses but it cannot render yet.
+Exit codes: 0 success, 1 the document cannot be read or rendered, or the image
+cannot be created (the error says why), 2 usage error, 3 the report could not
+be written (for example a closed pipe).
 ";
 
 /// Exit code when writing the report or a message fails.
@@ -44,6 +53,10 @@ fn run(args: &[std::ffi::OsString], out: &mut dyn Write, err: &mut dyn Write) ->
             writeln!(out, "castle-pdf {}", env!("CARGO_PKG_VERSION")).map(|()| 0)
         }
         [command, path] if *command == "inspect" => inspect::run(path.as_ref(), out, err),
+        [command, rest @ ..] if *command == "render" => match render::Request::parse(rest) {
+            Some(request) => render::run(&request, out, err),
+            None => err.write_all(USAGE.as_bytes()).map(|()| 2),
+        },
         _ => err.write_all(USAGE.as_bytes()).map(|()| 2),
     };
     // A closed output (such as a pipe to `head`) is not a document error: it
@@ -119,6 +132,12 @@ mod tests {
             &["inspect"],
             &["inspect", "a", "b"],
             &["open", "a"],
+            &["render", "a", "1"],
+            &["render", "a", "0", "b"],
+            &["render", "a", "x", "b"],
+            &["render", "a", "1", "b", "--scale"],
+            &["render", "a", "1", "b", "--zoom", "2"],
+            &["render", "a", "1", "b", "--scale", "big"],
         ] {
             let (code, out, err) = call(args);
             assert_eq!(code, 2, "{args:?}");
