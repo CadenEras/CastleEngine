@@ -8,8 +8,8 @@ pas un booléen « compatible PDF 2.0 ».
 | --- | --- | --- |
 | P0 — fondations | Workspace, UI vide, protocole worker, budgets, corpus, CI OS | Build natif des trois OS, contrôle annulation/worker, toolchains verrouillées et baseline mémoire |
 | P1 — lecture structurée | Tokenizer, objets, xref classique, sources, pages ; CLI diagnostic | Cas valides et invalides, limites et références cycliques testés ; refus explicite des capacités absentes |
-| P2 — lecteur utile | Interpréteur graphique minimal, rendu tuilé, polices/images ciblées, navigation | Première page rendue, UI réactive, corpus/goldens et comparaisons, mémoire/worker contrôlés |
-| P3 — compatibilité et texte | Xref/object streams, filtres prioritaires, texte/ToUnicode, recherche/sélection | Matrice de support publiée, tests sur corpus hétérogène, lecture et copie Unicode vérifiées |
+| P2 — lecteur utile | Filtre Flate, xref/object streams, interpréteur graphique minimal, rendu tuilé, polices/images ciblées, navigation (ordre : ADR-0003) | Première page rendue, UI réactive, corpus/goldens et comparaisons, mémoire/worker contrôlés |
+| P3 — compatibilité et texte | Filtres secondaires, texte/ToUnicode, recherche/sélection | Matrice de support publiée, tests sur corpus hétérogène, lecture et copie Unicode vérifiées |
 | P4 — écriture et pages | Writer, rotation/réordre/suppression, fusion/découpe, sauvegarde | Réouverture indépendante, erreurs d'écriture sans perte, propriétés de round-trip et undo/redo |
 | P5 — annotations/formulaires | Annotations, apparences, AcroForm simple, impression selon OS | Réouverture dans moteurs indépendants, valeurs/apparences conservées, accessibilité UI testée |
 | P6 — fonctions avancées séparées | OCR, édition de texte existant, chiffrement, signatures, caviardage | Étude et tests propres à chaque fonction ; aucune promesse de sécurité avant validation dédiée |
