@@ -1,11 +1,12 @@
 //! PDF syntax layer: resource budgets, input sources, the tokenizer and the
-//! object parser. Cross-reference parsing builds on these in P1 (ADR-0002).
+//! object parser, and the file structure (classic cross-reference tables).
 
 mod lexer;
 mod limits;
 mod object;
 mod parser;
 mod source;
+mod xref;
 
 pub use lexer::{Lexer, Spanned, Token, is_delimiter, is_regular, is_whitespace};
 pub use limits::{
@@ -13,4 +14,5 @@ pub use limits::{
 };
 pub use object::{Dictionary, IndirectObject, IndirectValue, Object, ObjectId, Stream};
 pub use parser::{LengthResolver, MAX_SUPPORTED_NESTING_DEPTH, Parser};
-pub use source::MemorySource;
+pub use source::{MemorySource, Source};
+pub use xref::{PdfFile, Version, XrefEntry};

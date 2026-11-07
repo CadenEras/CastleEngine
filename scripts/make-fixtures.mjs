@@ -31,20 +31,49 @@ export function buildPdf(bodies, version = '1.4') {
   return Buffer.concat(chunks);
 }
 
+// Appends an incremental update (ISO 32000-2, 7.5.6): the given objects
+// (number -> body), one xref subsection per object, and a trailer whose /Prev
+// points at the previous section.
+export function appendUpdate(base, objects, size) {
+  const prev = Number(/startxref\n(\d+)\n%%EOF\n$/.exec(base.toString('latin1'))[1]);
+  const chunks = [base];
+  let length = base.length;
+  let entries = '';
+  for (const [number, body] of Object.entries(objects)) {
+    const chunk = Buffer.from(`${number} 0 obj\n${body}\nendobj\n`, 'latin1');
+    entries += `${number} 1\n${String(length).padStart(10, '0')} 00000 n \n`;
+    chunks.push(chunk);
+    length += chunk.length;
+  }
+  chunks.push(Buffer.from(
+    `xref\n${entries}trailer\n<< /Size ${size} /Root 1 0 R /Prev ${prev} >>\n`
+    + `startxref\n${length}\n%%EOF\n`, 'latin1'));
+  return Buffer.concat(chunks);
+}
+
 function stream(content) {
   return `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream`;
 }
 
-export const fixtures = {
-  // One A4 page, one line of text in a standard 14 font, uncompressed.
-  'minimal.pdf': buildPdf([
+function onePage(text) {
+  return [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] '
       + '/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
-    stream('BT /F1 24 Tf 72 770 Td (CastlePDF minimal fixture) Tj ET'),
+    stream(`BT /F1 24 Tf 72 770 Td (${text}) Tj ET`),
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-  ]),
+  ];
+}
+
+export const fixtures = {
+  // One A4 page, one line of text in a standard 14 font, uncompressed.
+  'minimal.pdf': buildPdf(onePage('CastlePDF minimal fixture')),
+  // The same page, then an incremental update replacing its content stream.
+  'incremental.pdf': appendUpdate(
+    buildPdf(onePage('CastlePDF original revision')),
+    { 4: stream('BT /F1 24 Tf 72 770 Td (CastlePDF updated revision) Tj ET') },
+    6),
 };
 
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
