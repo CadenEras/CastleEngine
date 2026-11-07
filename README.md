@@ -29,7 +29,7 @@ mémoire bornée, réactivité et maintenabilité.
 | Phase | Contenu | État |
 | --- | --- | --- |
 | P0 — fondations | Workspace, UI vide, protocole worker, budgets, corpus, CI trois OS | Terminée (`v0.1.0-alpha.1`) |
-| P1 — lecture structurée | Tokenizer, objets, xref classique, pages, CLI de diagnostic | En cours : tokenizer fait |
+| P1 — lecture structurée | Tokenizer, objets, xref classique, pages, CLI de diagnostic | En cours : tokenizer et objets faits |
 | P2 et suivantes | Rendu, texte, écriture, annotations, fonctions avancées | Voir la [feuille de route](docs/ROADMAP.md) |
 
 Le support PDF sera publié sous forme de matrice de capacités. Toute capacité absente
@@ -39,7 +39,7 @@ renvoie une erreur explicite plutôt qu'un résultat approximatif.
 
 ```text
 crates/
-  pdf-syntax/      budgets, annulation, source d'entrée, tokenizer (puis objets, xref)
+  pdf-syntax/      budgets, annulation, source d'entrée, tokenizer, objets (puis xref)
   pdf-worker/      processus isolé : trames bornées, protocole versionné, annulation
 apps/desktop/
   src/             interface React / TypeScript, sans privilège

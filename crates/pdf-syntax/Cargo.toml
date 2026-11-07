@@ -1,6 +1,6 @@
 [package]
 name = "pdf-syntax"
-description = "PDF syntax: tokenizer, input sources and shared resource budgets"
+description = "PDF syntax: tokenizer, objects, input sources and shared resource budgets"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

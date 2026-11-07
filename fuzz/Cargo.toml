@@ -21,4 +21,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "objects"
+path = "fuzz_targets/objects.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
