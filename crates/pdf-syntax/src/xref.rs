@@ -1,24 +1,27 @@
 //! File structure: header, classic cross-reference tables, trailers and
 //! incremental updates (ISO 32000-2:2020, 7.5).
 //!
-//! Strict (ADR-0002): the header must start the file, `startxref` must lead to a
-//! well-formed `xref` table, entries are exactly 20 bytes, and `/Prev` chains
+//! Strict (ADR-0002): the header must start the file; every offset given by
+//! `startxref`, `/Prev` or an entry must point exactly at its keyword or object
+//! (no white space or comment skipped); the table layout is read on raw bytes
+//! (`xref` EOL, `first count` EOL, 20-byte entries, `trailer`); `/Prev` chains
 //! must not loop. No reconstruction is attempted. Cross-reference streams,
 //! hybrid files (`/XRefStm`) and encryption are refused as unsupported.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
-use crate::lexer::{Lexer, Spanned, Token, is_whitespace};
+use crate::lexer::{Lexer, Token, is_regular, is_whitespace};
 use crate::limits::{Budget, Capability, Error, MalformedKind};
 use crate::object::{Dictionary, IndirectObject, IndirectValue, Object, ObjectId, Stream};
-use crate::parser::Parser;
+use crate::parser::{LengthResolver, Parser};
 use crate::source::Source;
 
 /// `startxref` is searched in this many bytes at the end of the file.
 const STARTXREF_WINDOW: u64 = 1024;
 /// Length of one cross-reference entry, end-of-line included.
-const ENTRY_LEN: usize = 20;
+const ENTRY_LEN: u64 = 20;
 /// Cancellation is checked every this many entries.
 const CANCEL_CHECK_ENTRIES: u64 = 4096;
 
@@ -38,8 +41,20 @@ pub enum XrefEntry {
     InUse { offset: u64, generation: u16 },
 }
 
+/// One cross-reference section of the `/Prev` chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct XrefSection {
+    /// Offset of its `xref` keyword.
+    pub offset: u64,
+    /// Number of entries it declares.
+    pub entries: usize,
+}
+
 /// A PDF file opened through its cross-reference tables: entries merged from
 /// all revisions (newest wins) and the newest trailer.
+///
+/// In P1 the reader asks the source for whole ranges, which `MemorySource`
+/// serves without copying; it is meant for in-memory sources (ADR-0002).
 ///
 /// ```
 /// use pdf_syntax::{Budget, CancellationToken, MemorySource, PdfFile, ResourceLimits};
@@ -54,35 +69,68 @@ pub enum XrefEntry {
 /// assert_eq!(file.root().map(|id| id.number), Some(1));
 /// # Ok::<(), pdf_syntax::Error>(())
 /// ```
-#[derive(Debug)]
 pub struct PdfFile<S> {
     source: S,
     version: Version,
+    startxref: u64,
+    sections: Vec<XrefSection>,
     entries: BTreeMap<u32, XrefEntry>,
     trailer: Dictionary,
-    revisions: usize,
+}
+
+/// Never prints the document bytes: they may be private and very large.
+impl<S: Source> fmt::Debug for PdfFile<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PdfFile")
+            .field("len", &self.source.len())
+            .field("version", &self.version)
+            .field("startxref", &self.startxref)
+            .field("sections", &self.sections)
+            .field("entries", &self.entries.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl<S: Source> PdfFile<S> {
     /// Reads the header, the `startxref` pointer and every cross-reference
     /// section of the `/Prev` chain. Objects are parsed later, on demand.
+    ///
+    /// Charges `budget` one object per section, subsection, entry and trailer
+    /// node: give opening its own budget, separate from later tasks. A file with
+    /// more entries than `max_objects_visited` is refused.
     pub fn open(source: S, budget: &mut Budget) -> Result<Self, Error> {
         let data = source.read(0..source.len())?;
         let version = parse_header(&data)?;
-        let start = find_startxref(&data, budget)?;
-        let (entries, trailer, revisions) = read_sections(&data, start, budget)?;
+        let startxref = find_startxref(&data)?;
+        let (entries, trailer, sections) = read_sections(&data, startxref, budget)?;
         drop(data);
         Ok(Self {
             source,
             version,
+            startxref,
+            sections,
             entries,
             trailer,
-            revisions,
         })
     }
 
     pub fn version(&self) -> Version {
         self.version
+    }
+
+    /// Offset given by the last `startxref`: the `/Prev` of a future update.
+    pub fn startxref(&self) -> u64 {
+        self.startxref
+    }
+
+    /// Sections read, newest first; one per revision.
+    pub fn sections(&self) -> &[XrefSection] {
+        &self.sections
+    }
+
+    /// Number of revisions (1 + incremental updates).
+    pub fn revisions(&self) -> usize {
+        self.sections.len()
     }
 
     /// Trailer of the newest revision.
@@ -93,11 +141,6 @@ impl<S: Source> PdfFile<S> {
     /// `/Root` of the newest trailer, checked as a reference when opening.
     pub fn root(&self) -> Option<ObjectId> {
         self.trailer.get(b"Root").and_then(Object::as_reference)
-    }
-
-    /// Number of cross-reference sections read (1 + incremental updates).
-    pub fn revisions(&self) -> usize {
-        self.revisions
     }
 
     pub fn entry(&self, number: u32) -> Option<XrefEntry> {
@@ -112,9 +155,9 @@ impl<S: Source> PdfFile<S> {
     /// Parses the object `id` from its cross-reference entry.
     ///
     /// A reference to an object that is free, absent, or whose generation does
-    /// not match is a reference to `null` (ISO 32000-2, 7.3.10). An object whose
-    /// header does not carry `id` is malformed. An indirect `/Length` must lead
-    /// to a direct integer; it is never resolved through another indirection.
+    /// not match is a reference to `null` (ISO 32000-2, 7.3.10). The entry
+    /// offset must point exactly at `id`'s `n g obj`. An indirect `/Length` must
+    /// lead to a direct integer; it is never resolved through another indirection.
     pub fn resolve(&self, id: ObjectId, budget: &mut Budget) -> Result<IndirectValue, Error> {
         let Some(offset) = self.locate(id) else {
             return Ok(IndirectValue::Object(Object::Null));
@@ -161,12 +204,16 @@ impl<S: Source> PdfFile<S> {
     }
 }
 
+/// Parses `n g obj` starting exactly at `offset`.
 fn parse_at(
     data: &[u8],
     offset: u64,
     budget: &mut Budget,
-    resolve_length: &mut crate::parser::LengthResolver<'_>,
+    resolve_length: &mut LengthResolver<'_>,
 ) -> Result<IndirectObject, Error> {
+    if !rest(data, offset).first().is_some_and(u8::is_ascii_digit) {
+        return Err(malformed(offset, MalformedKind::ObjectIdMismatch));
+    }
     let mut parser = Parser::new(data);
     parser.seek(offset)?;
     parser.parse_indirect_object(budget, resolve_length)
@@ -184,93 +231,127 @@ fn malformed(offset: u64, kind: MalformedKind) -> Error {
     Error::Malformed { offset, kind }
 }
 
+/// Bytes from `offset` to the end; empty past the end.
+fn rest(data: &[u8], offset: u64) -> &[u8] {
+    usize::try_from(offset)
+        .ok()
+        .and_then(|o| data.get(o..))
+        .unwrap_or_default()
+}
+
+/// True when `keyword` starts exactly at `offset` as a whole token: not
+/// preceded or followed by a regular character.
+fn keyword_at(data: &[u8], offset: u64, keyword: &[u8]) -> bool {
+    let before = offset
+        .checked_sub(1)
+        .and_then(|o| rest(data, o).first().copied());
+    let after = rest(data, offset);
+    after.starts_with(keyword)
+        && !before.is_some_and(is_regular)
+        && !after.get(keyword.len()).copied().is_some_and(is_regular)
+}
+
+/// Unsigned decimal digits at `offset`: value and number of digits.
+fn digits_at(data: &[u8], offset: u64) -> Option<(u64, u64)> {
+    let digits: &[u8] = {
+        let bytes = rest(data, offset);
+        let len = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
+        bytes.get(..len)?
+    };
+    if digits.is_empty() {
+        return None;
+    }
+    let value = digits.iter().try_fold(0_u64, |acc, d| {
+        acc.checked_mul(10)?.checked_add(u64::from(d - b'0'))
+    })?;
+    Some((value, digits.len() as u64))
+}
+
+/// Optional spaces, then one end-of-line; returns the offset after it.
+fn line_end(data: &[u8], offset: u64) -> Option<u64> {
+    let bytes = rest(data, offset);
+    let spaces = bytes.iter().take_while(|b| **b == b' ').count();
+    let eol = match bytes.get(spaces..)? {
+        [b'\r', b'\n', ..] => 2,
+        [b'\r' | b'\n', ..] => 1,
+        _ => return None,
+    };
+    Some(offset + (spaces + eol) as u64)
+}
+
 /// `%PDF-M.m` at offset 0, followed by white space. Versions 1.0 to 1.7 and 2.0.
 fn parse_header(data: &[u8]) -> Result<Version, Error> {
-    let header = |len| data.get(..len).ok_or(Error::Truncated { offset: 0 });
-    let invalid = malformed(0, MalformedKind::InvalidHeader);
-    if !b"%PDF-".starts_with(header(data.len().min(5))?) {
-        return Err(invalid);
+    let start = data.get(..data.len().min(5)).unwrap_or_default();
+    if !b"%PDF-".starts_with(start) {
+        return Err(malformed(0, MalformedKind::InvalidHeader));
     }
-    let (major, minor) = match header(9)? {
+    let (major, minor) = match data.get(..9).ok_or(Error::Truncated { offset: 0 })? {
         [b'%', b'P', b'D', b'F', b'-', major, b'.', minor, end]
             if major.is_ascii_digit() && minor.is_ascii_digit() && is_whitespace(*end) =>
         {
             (major - b'0', minor - b'0')
         }
-        _ => return Err(invalid),
+        _ => return Err(malformed(0, MalformedKind::InvalidHeader)),
     };
-    let version = Version { major, minor };
     if (major == 1 && minor <= 7) || (major == 2 && minor == 0) {
-        Ok(version)
+        Ok(Version { major, minor })
     } else {
         Err(Error::Unsupported(Capability::PdfVersion))
     }
 }
 
-/// Finds the last `startxref` near the end and returns the offset it gives,
-/// which must be followed by `%%EOF` and nothing but white space.
-fn find_startxref(data: &[u8], budget: &mut Budget) -> Result<u64, Error> {
+/// Finds the last standalone `startxref` in the final 1024 bytes: white space,
+/// unsigned digits, white space, `%%EOF`, then nothing but white space.
+fn find_startxref(data: &[u8]) -> Result<u64, Error> {
     let len = data.len() as u64;
     let window_start = len.saturating_sub(STARTXREF_WINDOW);
-    let window = data.get(window_start as usize..).unwrap_or_default();
-    let keyword = b"startxref";
-    let found = window
+    let keyword: &[u8] = b"startxref";
+    let found = rest(data, window_start)
         .windows(keyword.len())
-        .rposition(|w| w == keyword)
+        .enumerate()
+        .rev()
+        .map(|(i, _)| window_start + i as u64)
+        .find(|at| keyword_at(data, *at, keyword))
         .ok_or(malformed(window_start, MalformedKind::MissingStartxref))?;
-    let keyword_offset = window_start + found as u64;
-    let mut lexer = Lexer::new(data);
-    lexer.seek(keyword_offset)?;
-    // The keyword must stand alone (not `xstartxref`), then the offset follows.
-    if !matches!(
-        lexer.next_token(budget)?,
-        Some(Spanned {
-            token: Token::Keyword(b"startxref"),
-            ..
-        })
-    ) {
-        return Err(malformed(keyword_offset, MalformedKind::MissingStartxref));
-    }
-    let offset = match lexer.next_token(budget)? {
-        Some(Spanned {
-            token: Token::Integer(offset),
-            offset: at,
-        }) => u64::try_from(offset)
-            .ok()
-            .filter(|o| *o < len)
-            .ok_or(malformed(at, MalformedKind::MissingStartxref))?,
-        Some(Spanned { offset: at, .. }) => {
-            return Err(malformed(at, MalformedKind::MissingStartxref));
-        }
-        None => {
-            return Err(Error::Truncated {
-                offset: keyword_offset,
-            });
-        }
+    let after_keyword = found + keyword.len() as u64;
+    let skip_ws = |from: u64| {
+        from + rest(data, from)
+            .iter()
+            .take_while(|b| is_whitespace(**b))
+            .count() as u64
     };
-    let tail_start = lexer.position();
-    let tail = data.get(tail_start as usize..).unwrap_or_default();
-    let eof_at = tail.iter().position(|b| !is_whitespace(*b));
-    let rest = eof_at.and_then(|i| tail.get(i..)).unwrap_or_default();
-    match rest.strip_prefix(b"%%EOF") {
-        Some(after) if after.iter().all(|b| is_whitespace(*b)) => Ok(offset),
-        _ if b"%%EOF".starts_with(rest) => Err(Error::Truncated {
-            offset: keyword_offset,
-        }),
-        _ => Err(malformed(
-            tail_start + eof_at.unwrap_or(0) as u64,
-            MalformedKind::MissingEof,
-        )),
+    let digits = skip_ws(after_keyword);
+    let Some((offset, digit_count)) = digits_at(data, digits).filter(|_| digits > after_keyword)
+    else {
+        return Err(if rest(data, digits).is_empty() {
+            Error::Truncated { offset: found }
+        } else {
+            malformed(digits, MalformedKind::MissingStartxref)
+        });
+    };
+    if offset >= len {
+        return Err(malformed(digits, MalformedKind::MissingStartxref));
+    }
+    let eof = skip_ws(digits + digit_count);
+    let tail = rest(data, eof);
+    match tail.strip_prefix(b"%%EOF") {
+        Some(after) if eof > digits + digit_count && after.iter().all(|b| is_whitespace(*b)) => {
+            Ok(offset)
+        }
+        _ if b"%%EOF".starts_with(tail) => Err(Error::Truncated { offset: found }),
+        _ => Err(malformed(eof, MalformedKind::MissingEof)),
     }
 }
 
-type Sections = (BTreeMap<u32, XrefEntry>, Dictionary, usize);
+type Merged = BTreeMap<u32, (XrefEntry, u64)>;
+type Sections = (BTreeMap<u32, XrefEntry>, Dictionary, Vec<XrefSection>);
 
 /// Reads the section at `start` and those reached through `/Prev`, newest first.
 fn read_sections(data: &[u8], start: u64, budget: &mut Budget) -> Result<Sections, Error> {
     let len = data.len() as u64;
-    let mut entries: BTreeMap<u32, XrefEntry> = BTreeMap::new();
+    let mut merged: Merged = BTreeMap::new();
     let mut visited = BTreeSet::new();
+    let mut sections = Vec::new();
     let mut newest: Option<Dictionary> = None;
     let mut next = Some(start);
     while let Some(offset) = next {
@@ -279,42 +360,46 @@ fn read_sections(data: &[u8], start: u64, budget: &mut Budget) -> Result<Section
             return Err(malformed(offset, MalformedKind::XrefPrevCycle));
         }
         budget.charge_object()?;
-        let (section, trailer) = read_section(data, offset, budget)?;
-        if trailer.get(b"XRefStm").is_some() {
+        let section = read_section(data, offset, budget)?;
+        // Checked on every trailer: an older encrypted revision would otherwise
+        // be read as plain text.
+        if section.trailer.get(b"Encrypt").is_some() {
+            return Err(Error::Unsupported(Capability::Encryption));
+        }
+        if section.trailer.get(b"XRefStm").is_some() {
             return Err(Error::Unsupported(Capability::XrefStreams));
         }
-        for (number, entry) in section {
-            entries.entry(number).or_insert(entry);
+        sections.push(XrefSection {
+            offset,
+            entries: section.entries.len(),
+        });
+        for (number, entry) in section.entries {
+            merged.entry(number).or_insert(entry);
         }
-        next = match trailer.get(b"Prev") {
+        let invalid_prev = malformed(section.trailer_offset, MalformedKind::InvalidTrailer);
+        next = match section.trailer.get(b"Prev") {
             None => None,
             Some(Object::Integer(prev)) => Some(
                 u64::try_from(*prev)
                     .ok()
                     .filter(|p| *p < len)
-                    .ok_or(malformed(offset, MalformedKind::InvalidTrailer))?,
+                    .ok_or(invalid_prev)?,
             ),
-            Some(_) => return Err(malformed(offset, MalformedKind::InvalidTrailer)),
+            Some(_) => return Err(invalid_prev),
         };
         if newest.is_none() {
-            newest = Some(trailer);
+            newest = Some(section.trailer);
         }
     }
     let trailer = newest.ok_or(malformed(start, MalformedKind::InvalidTrailer))?;
-    check_trailer(&trailer, &entries, start, len)?;
-    Ok((entries, trailer, visited.len()))
+    check_trailer(&trailer, &merged, start)?;
+    let entries = merged.into_iter().map(|(n, (e, _))| (n, e)).collect();
+    Ok((entries, trailer, sections))
 }
 
-fn check_trailer(
-    trailer: &Dictionary,
-    entries: &BTreeMap<u32, XrefEntry>,
-    start: u64,
-    len: u64,
-) -> Result<(), Error> {
+/// `/Size` and `/Root` of the newest trailer; every entry number below `/Size`.
+fn check_trailer(trailer: &Dictionary, entries: &Merged, start: u64) -> Result<(), Error> {
     let invalid = || malformed(start, MalformedKind::InvalidTrailer);
-    if trailer.get(b"Encrypt").is_some() {
-        return Err(Error::Unsupported(Capability::Encryption));
-    }
     let size = trailer
         .get(b"Size")
         .and_then(Object::as_integer)
@@ -324,145 +409,124 @@ fn check_trailer(
         .get(b"Root")
         .and_then(Object::as_reference)
         .ok_or_else(invalid)?;
-    for (number, entry) in entries {
-        let in_range = i64::from(*number) < size;
-        let valid = match entry {
-            XrefEntry::InUse { offset, .. } => *number != 0 && *offset < len,
-            XrefEntry::Free { .. } => true,
-        };
-        if !in_range || !valid {
-            return Err(malformed(start, MalformedKind::InvalidXrefEntry));
-        }
+    match entries
+        .iter()
+        .find(|(number, _)| i64::from(**number) >= size)
+    {
+        Some((_, (_, at))) => Err(malformed(*at, MalformedKind::InvalidXrefEntry)),
+        None => Ok(()),
     }
-    Ok(())
 }
 
-type Section = (BTreeMap<u32, XrefEntry>, Dictionary);
+struct SectionRead {
+    /// Entries with the offset of their 20-byte record.
+    entries: Merged,
+    trailer: Dictionary,
+    trailer_offset: u64,
+}
 
-/// One `xref` table and its `trailer` dictionary at `offset`.
-fn read_section(data: &[u8], offset: u64, budget: &mut Budget) -> Result<Section, Error> {
-    let mut lexer = Lexer::new(data);
-    lexer.seek(offset)?;
-    match lexer.next_token(budget)? {
-        Some(Spanned {
-            token: Token::Keyword(b"xref"),
-            ..
-        }) => {}
-        Some(Spanned { offset: at, token }) => {
-            return Err(if looks_like_object(data, at, token, budget) {
-                Error::Unsupported(Capability::XrefStreams)
-            } else {
-                malformed(at, MalformedKind::MissingXref)
-            });
-        }
-        None => return Err(Error::Truncated { offset }),
+/// One `xref` table and its `trailer` dictionary, `xref` exactly at `offset`.
+fn read_section(data: &[u8], offset: u64, budget: &mut Budget) -> Result<SectionRead, Error> {
+    let len = data.len() as u64;
+    if !keyword_at(data, offset, b"xref") {
+        return Err(if is_xref_stream(data, offset, budget) {
+            Error::Unsupported(Capability::XrefStreams)
+        } else {
+            malformed(offset, MalformedKind::MissingXref)
+        });
     }
-    let mut section = BTreeMap::new();
+    let bad = |at| malformed(at, MalformedKind::InvalidXrefSubsection);
+    let truncated = Error::Truncated { offset };
+    let mut pos = line_end(data, offset + 4).ok_or(bad(offset + 4))?;
+    let mut entries: Merged = BTreeMap::new();
     loop {
-        let (at, first) = match lexer.next_token(budget)? {
-            Some(Spanned {
-                token: Token::Keyword(b"trailer"),
-                ..
-            }) => break,
-            Some(Spanned {
-                token: Token::Integer(first),
-                offset: at,
-            }) => (at, first),
-            Some(Spanned { offset: at, .. }) => {
-                return Err(malformed(at, MalformedKind::InvalidXrefSubsection));
-            }
-            None => return Err(Error::Truncated { offset }),
-        };
-        let count = match lexer.next_token(budget)? {
-            Some(Spanned {
-                token: Token::Integer(count),
-                ..
-            }) => count,
-            Some(Spanned { offset: at, .. }) => {
-                return Err(malformed(at, MalformedKind::InvalidXrefSubsection));
-            }
-            None => return Err(Error::Truncated { offset }),
-        };
-        let bad_subsection = malformed(at, MalformedKind::InvalidXrefSubsection);
-        let first = u64::try_from(first).map_err(|_| bad_subsection.clone())?;
-        let count = u64::try_from(count).map_err(|_| bad_subsection.clone())?;
+        budget.check_cancelled()?;
+        if keyword_at(data, pos, b"trailer") {
+            break;
+        }
+        if b"trailer".starts_with(rest(data, pos)) {
+            return Err(truncated);
+        }
+        // `first count` separated by one space, then an end-of-line.
+        let (first, first_len) = digits_at(data, pos).ok_or(bad(pos))?;
+        let space = pos + first_len;
+        if rest(data, space).first() != Some(&b' ') {
+            return Err(bad(space));
+        }
+        let (count, count_len) = digits_at(data, space + 1).ok_or(bad(space + 1))?;
+        budget.charge_object()?;
         // Object numbers are u32: first + count - 1 <= u32::MAX.
         if first.saturating_add(count) > u64::from(u32::MAX) + 1 {
-            return Err(bad_subsection);
+            return Err(bad(pos));
         }
-        let entries_start = subsection_line_end(data, lexer.position())
-            .ok_or(malformed(at, MalformedKind::InvalidXrefSubsection))?;
+        let entries_start = line_end(data, space + 1 + count_len).ok_or(bad(space + 1))?;
         let entries_end = count
-            .checked_mul(ENTRY_LEN as u64)
+            .checked_mul(ENTRY_LEN)
             .and_then(|n| n.checked_add(entries_start))
-            .filter(|end| *end <= data.len() as u64)
-            .ok_or(Error::Truncated { offset: at })?;
+            .filter(|end| *end <= len)
+            .ok_or(Error::Truncated { offset: pos })?;
         for i in 0..count {
             if i % CANCEL_CHECK_ENTRIES == 0 {
                 budget.check_cancelled()?;
             }
             budget.charge_object()?;
-            let entry_offset = entries_start + i * ENTRY_LEN as u64;
-            let record = data
-                .get(entry_offset as usize..entry_offset as usize + ENTRY_LEN)
-                .ok_or(Error::Truncated { offset: at })?;
-            let entry = parse_entry(record)
-                .ok_or(malformed(entry_offset, MalformedKind::InvalidXrefEntry))?;
+            let at = entries_start + i * ENTRY_LEN;
+            let invalid = malformed(at, MalformedKind::InvalidXrefEntry);
+            let record = rest(data, at)
+                .get(..ENTRY_LEN as usize)
+                .ok_or(Error::Truncated { offset: pos })?;
+            let entry = parse_entry(record).ok_or(invalid.clone())?;
             // first + i <= u32::MAX was checked above.
-            let number = u32::try_from(first + i)
-                .map_err(|_| malformed(at, MalformedKind::InvalidXrefSubsection))?;
-            if section.insert(number, entry).is_some() {
-                return Err(malformed(entry_offset, MalformedKind::InvalidXrefEntry));
+            let number = u32::try_from(first + i).map_err(|_| bad(pos))?;
+            let valid = match entry {
+                XrefEntry::InUse { offset, .. } => number != 0 && offset < len,
+                XrefEntry::Free { .. } => true,
+            };
+            if !valid || entries.insert(number, (entry, at)).is_some() {
+                return Err(invalid);
             }
         }
-        lexer.seek(entries_end)?;
+        pos = entries_end;
     }
-    let trailer_offset = lexer.position();
     let mut parser = Parser::new(data);
-    parser.seek(trailer_offset)?;
+    parser.seek(pos + b"trailer".len() as u64)?;
     match parser.parse_object(budget)? {
-        Object::Dictionary(trailer) => Ok((section, trailer)),
-        _ => Err(malformed(trailer_offset, MalformedKind::InvalidTrailer)),
+        Object::Dictionary(trailer) => Ok(SectionRead {
+            entries,
+            trailer,
+            trailer_offset: pos,
+        }),
+        _ => Err(malformed(pos, MalformedKind::InvalidTrailer)),
     }
 }
 
-/// True when the tokens at `offset` read `n g obj`: a cross-reference stream.
-fn looks_like_object(data: &[u8], offset: u64, first: Token<'_>, budget: &mut Budget) -> bool {
-    if !matches!(first, Token::Integer(_)) {
+/// True when `offset` starts `n g obj << ... /Type /XRef ... >>`.
+fn is_xref_stream(data: &[u8], offset: u64, budget: &mut Budget) -> bool {
+    if !rest(data, offset).first().is_some_and(u8::is_ascii_digit) {
         return false;
     }
     let mut lexer = Lexer::new(data);
     if lexer.seek(offset).is_err() {
         return false;
     }
-    let mut tokens = std::iter::from_fn(|| lexer.next_token(budget).ok().flatten());
-    matches!(
-        (
-            tokens.next().map(|t| t.token),
-            tokens.next().map(|t| t.token),
-            tokens.next().map(|t| t.token),
-        ),
+    let mut next = || lexer.next_token(budget).ok().flatten().map(|t| t.token);
+    let header = (next(), next(), next());
+    if !matches!(
+        header,
         (
             Some(Token::Integer(_)),
             Some(Token::Integer(_)),
             Some(Token::Keyword(b"obj"))
         )
-    )
-}
-
-/// After `first count`: optional spaces, then one end-of-line. Returns the
-/// offset of the first entry.
-fn subsection_line_end(data: &[u8], from: u64) -> Option<u64> {
-    let mut pos = usize::try_from(from).ok()?;
-    while data.get(pos) == Some(&b' ') {
-        pos += 1;
+    ) {
+        return false;
     }
-    let eol = match (data.get(pos), data.get(pos + 1)) {
-        (Some(b'\r'), Some(b'\n')) => 2,
-        (Some(b'\r' | b'\n'), _) => 1,
-        _ => return None,
-    };
-    Some((pos + eol) as u64)
+    let mut parser = Parser::new(data);
+    parser.seek(lexer.position()).is_ok()
+        && matches!(
+            parser.parse_object(budget),
+            Ok(Object::Dictionary(dict)) if dict.get(b"Type").and_then(Object::as_name) == Some(b"XRef")
+        )
 }
 
 /// `oooooooooo ggggg n` or `f`, then a two-byte end of line (ISO 32000-2, 7.5.4).

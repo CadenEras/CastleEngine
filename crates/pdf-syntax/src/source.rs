@@ -12,9 +12,18 @@ use crate::limits::{Error, LimitKind, ResourceLimits};
 const READ_CHUNK: usize = 64 * 1024;
 
 /// Immutable document bytes, at most `ResourceLimits::max_input_bytes` long.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MemorySource {
     data: Vec<u8>,
+}
+
+/// Prints the length only: document bytes may be private and very large.
+impl std::fmt::Debug for MemorySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemorySource")
+            .field("len", &self.data.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl MemorySource {

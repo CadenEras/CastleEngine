@@ -225,14 +225,19 @@ fn startxref_must_point_at_a_classic_table() {
             &format!("startxref\n{offset}\n"),
         )
     };
-    // At the catalog object: a cross-reference stream would start like this.
+    // An ordinary object is not a cross-reference stream: the pointer is wrong.
     let object_offset = valid
         .windows(7)
         .position(|w| w == b"1 0 obj")
         .expect("object") as u64;
     assert_eq!(
-        open(&point_at(object_offset)).err(),
-        Some(Error::Unsupported(Capability::XrefStreams))
+        kind(open(&point_at(object_offset))),
+        Some(MalformedKind::MissingXref)
+    );
+    // White space before `xref` is not skipped.
+    assert_eq!(
+        kind(open(&point_at(xref - 1))),
+        Some(MalformedKind::MissingXref)
     );
     assert_eq!(
         kind(open(&point_at(object_offset + 8))),
@@ -275,7 +280,7 @@ fn invalid_entries() {
         let entry = format!("0000000000 65535 f{eol}");
         assert!(open(&replace(&valid, first, &entry)).is_ok(), "{eol:?}");
     }
-    // Object 0 in use, and an in-use offset past the end of the file.
+    // Object 0 in use (an offset past the end is tested with the entry offsets).
     assert_eq!(
         check(first, "0000000000 00000 n \n"),
         Some(MalformedKind::InvalidXrefEntry)
@@ -500,17 +505,18 @@ fn entries_are_charged_and_cancellation_is_honoured() {
     let bytes = simple(&[CATALOG, PAGES]);
     let mut exact = Budget::new(
         ResourceLimits {
-            max_objects_visited: 9,
+            max_objects_visited: 10,
             ..ResourceLimits::default()
         },
         CancellationToken::new(),
     );
-    // /Root 1 0 R is one object: 1 + 3 + (1 + 2 + 2) = 9.
+    // 1 section + 1 subsection + 3 entries + trailer (1 dictionary, 2 keys,
+    // 2 values; /Root 1 0 R is one object) = 10.
     assert!(open_with(&bytes, &mut exact).is_ok());
-    assert_eq!(exact.objects_visited(), 9);
+    assert_eq!(exact.objects_visited(), 10);
     let mut short = Budget::new(
         ResourceLimits {
-            max_objects_visited: 8,
+            max_objects_visited: 9,
             ..ResourceLimits::default()
         },
         CancellationToken::new(),
@@ -519,7 +525,7 @@ fn entries_are_charged_and_cancellation_is_honoured() {
         open_with(&bytes, &mut short).err(),
         Some(Error::LimitExceeded {
             kind: LimitKind::ObjectsVisited,
-            limit: 8
+            limit: 9
         })
     );
     let token = CancellationToken::new();
@@ -529,6 +535,217 @@ fn entries_are_charged_and_cancellation_is_honoured() {
         open_with(&bytes, &mut cancelled).err(),
         Some(Error::Cancelled)
     );
+}
+
+#[test]
+fn a_cross_reference_stream_is_unsupported() {
+    let xref_stream =
+        "<< /Type /XRef /Size 3 /W [1 2 1] /Root 1 0 R /Length 0 >>\nstream\n\nendstream";
+    let (valid, xref) = build("%PDF-1.7", &[CATALOG, xref_stream], "");
+    let target = valid
+        .windows(7)
+        .position(|w| w == b"2 0 obj")
+        .expect("object") as u64;
+    let pointed = replace(
+        &valid,
+        &format!("startxref\n{xref}\n"),
+        &format!("startxref\n{target}\n"),
+    );
+    assert_eq!(
+        open(&pointed).err(),
+        Some(Error::Unsupported(Capability::XrefStreams))
+    );
+}
+
+#[test]
+fn startxref_is_a_standalone_keyword_with_unsigned_digits() {
+    let (valid, xref) = build("%PDF-1.7", &[CATALOG], "");
+    let tail = format!("startxref\n{xref}\n%%EOF\n");
+    let with_tail = |new_tail: &str| replace(&valid, &tail, new_tail);
+    assert_eq!(
+        kind(open(&with_tail(&format!("xstartxref\n{xref}\n%%EOF\n")))),
+        Some(MalformedKind::MissingStartxref)
+    );
+    assert_eq!(
+        kind(open(&with_tail(&format!("startxref\n+{xref}\n%%EOF\n")))),
+        Some(MalformedKind::MissingStartxref)
+    );
+    // No offset at all is a missing offset, not a truncation.
+    assert_eq!(
+        kind(open(&with_tail("startxref\n%%EOF\n"))),
+        Some(MalformedKind::MissingStartxref)
+    );
+    // `%%EOF` glued to the digits.
+    assert_eq!(
+        kind(open(&with_tail(&format!("startxref\n{xref}%%EOF\n")))),
+        Some(MalformedKind::MissingEof)
+    );
+}
+
+#[test]
+fn table_layout_is_strict() {
+    let valid = simple(&[CATALOG]);
+    let check = |from: &str, to: &str| kind(open(&replace(&valid, from, to)));
+    let bad = Some(MalformedKind::InvalidXrefSubsection);
+    assert_eq!(check("xref\n0 2\n", "xref 0 2\n"), bad);
+    assert_eq!(check("xref\n0 2\n", "xref\n0\n2\n"), bad);
+    assert_eq!(check("xref\n0 2\n", "xref\n0  2\n"), bad);
+    assert_eq!(check("xref\n0 2\n", "xref\n%comment\n0 2\n"), bad);
+    assert_eq!(check(" n \ntrailer", " n \n\ntrailer"), bad);
+}
+
+#[test]
+fn several_subsections_and_empty_ones() {
+    let (valid, _) = build("%PDF-1.7", &[CATALOG, "(two)", "(three)"], "");
+    let text = String::from_utf8_lossy(&valid).into_owned();
+    let e: Vec<String> = text
+        .lines()
+        .filter(|l| l.ends_with(" n ") || l.ends_with(" f "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let table = format!("xref\n0 4\n{}", e.concat());
+    // Object 2 not listed, an empty subsection `5 0`, object 3 on its own.
+    let split = format!("xref\n0 2\n{}{}5 0\n3 1\n{}", e[0], e[1], e[3]);
+    let file = open(&replace(&valid, &table, &split)).expect("valid split table");
+    assert_eq!(file.entries().count(), 3);
+    assert_eq!(file.sections()[0].entries, 3);
+    assert_eq!(value(&file, 2), Ok(IndirectValue::Object(Object::Null)));
+    assert_eq!(
+        value(&file, 3),
+        Ok(IndirectValue::Object(Object::String(b"three".to_vec())))
+    );
+    // The same number twice in one section.
+    let duplicate = format!(
+        "xref\n0 2\n{}{}1 1\n{}2 2\n{}{}",
+        e[0], e[1], e[1], e[2], e[3]
+    );
+    assert_eq!(
+        kind(open(&replace(&valid, &table, &duplicate))),
+        Some(MalformedKind::InvalidXrefEntry)
+    );
+}
+
+#[test]
+fn an_update_can_free_an_object() {
+    let (base, xref) = build("%PDF-1.7", &[CATALOG, PAGES, "(gone)"], "");
+    let freed = base.len() as u64;
+    let mut updated = base;
+    updated.extend_from_slice(
+        format!(
+            "xref\n3 1\n0000000000 00001 f \ntrailer\n<< /Size 4 /Root 1 0 R /Prev {xref} >>\n\
+             startxref\n{freed}\n%%EOF\n"
+        )
+        .as_bytes(),
+    );
+    let file = open(&updated).expect("valid update");
+    assert_eq!(value(&file, 3), Ok(IndirectValue::Object(Object::Null)));
+    assert_eq!(file.startxref(), freed);
+    assert_eq!(
+        file.sections(),
+        &[
+            XrefSection {
+                offset: freed,
+                entries: 1
+            },
+            XrefSection {
+                offset: xref,
+                entries: 4
+            }
+        ]
+    );
+}
+
+#[test]
+fn older_trailers_are_checked_too() {
+    for (extra, error) in [
+        (
+            " /Encrypt << >>",
+            Error::Unsupported(Capability::Encryption),
+        ),
+        (" /XRefStm 0", Error::Unsupported(Capability::XrefStreams)),
+    ] {
+        let (base, xref) = build("%PDF-1.7", &[CATALOG], extra);
+        let (updated, _) = update(base, xref, &[(1, CATALOG)], 2);
+        assert_eq!(open(&updated).err(), Some(error));
+    }
+    // /Prev negative or past the end.
+    let (base, xref) = build("%PDF-1.7", &[CATALOG], "");
+    let (updated, _) = update(base, xref, &[(1, CATALOG)], 2);
+    for prev in ["-1", "99999999"] {
+        let changed = replace(&updated, &format!("/Prev {xref}"), &format!("/Prev {prev}"));
+        assert_eq!(kind(open(&changed)), Some(MalformedKind::InvalidTrailer));
+    }
+}
+
+#[test]
+fn entry_errors_point_at_the_entry() {
+    let (valid, xref) = build("%PDF-1.7", &[CATALOG, PAGES], "");
+    // The record of object 2 follows `xref\n0 3\n` (9 bytes) and two records.
+    let third = xref + 9 + 2 * 20;
+    assert_eq!(
+        open(&replace(&valid, "/Size 3", "/Size 2")).err(),
+        Some(Error::Malformed {
+            offset: third,
+            kind: MalformedKind::InvalidXrefEntry
+        })
+    );
+}
+
+#[test]
+fn a_large_table_at_the_exact_object_limit() {
+    let bodies: Vec<String> = (0..1000).map(|i| format!("({i})")).collect();
+    let all: Vec<&str> = std::iter::once(CATALOG)
+        .chain(bodies.iter().map(String::as_str))
+        .collect();
+    let bytes = simple(&all);
+    let limit = |max_objects_visited| {
+        Budget::new(
+            ResourceLimits {
+                max_objects_visited,
+                ..ResourceLimits::default()
+            },
+            CancellationToken::new(),
+        )
+    };
+    // 1 section + 1 subsection + 1002 entries + 5 trailer objects.
+    assert!(open_with(&bytes, &mut limit(1009)).is_ok());
+    assert_eq!(
+        open_with(&bytes, &mut limit(1008)).err(),
+        Some(Error::LimitExceeded {
+            kind: LimitKind::ObjectsVisited,
+            limit: 1008
+        })
+    );
+}
+
+#[test]
+fn objects_must_start_exactly_at_their_offset() {
+    let (valid, _) = build("%PDF-1.7", &[CATALOG, PAGES], "");
+    let text = String::from_utf8_lossy(&valid).into_owned();
+    let line = text
+        .lines()
+        .find(|l| l.ends_with(" 00000 n "))
+        .expect("in-use entry")
+        .to_owned();
+    let offset: u64 = line.get(..10).and_then(|o| o.parse().ok()).expect("offset");
+    // One byte earlier is the end of line before `1 0 obj`.
+    let shifted = replace(&valid, &line, &format!("{:010} 00000 n ", offset - 1));
+    let file = open(&shifted).expect("structure valid");
+    assert_eq!(
+        value(&file, 1),
+        Err(Error::Malformed {
+            offset: offset - 1,
+            kind: MalformedKind::ObjectIdMismatch
+        })
+    );
+}
+
+#[test]
+fn debug_output_never_contains_document_bytes() {
+    let file = open(&simple(&[CATALOG])).expect("valid");
+    let printed = format!("{file:?}");
+    assert!(!printed.contains("Catalog"), "{printed}");
+    assert!(printed.contains("len"), "{printed}");
 }
 
 proptest! {
