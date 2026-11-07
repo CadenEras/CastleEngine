@@ -7,6 +7,13 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
 
 ## [Non publié]
 
+## [0.1.0-alpha.2] — 2026-11-07
+
+Fin de la phase P1 (lecture structurée). Le moteur lit la structure de PDF à table
+xref classique : objets, révisions incrémentales, catalogue et arbre des pages, et les
+expose par la CLI de diagnostic `castle-pdf inspect`. **Aucun rendu** et aucun binaire
+distribué : l'application desktop n'ouvre pas encore de PDF.
+
 ### Ajouté
 
 - `pdf-syntax` : tokenizer strict (ISO 32000-2, 7.2–7.3) avec offsets, erreurs
@@ -29,7 +36,7 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
   refusés, `/Parent` et `/Count` vérifiés), attributs hérités `MediaBox`, `CropBox`
   (intersectée avec `MediaBox`), `Rotate` et `Resources` ; erreurs nommant l'objet fautif.
 - `pdf-cli` (nouvelle crate, binaire `castle-pdf`) : `inspect <fichier>` affiche la
-  structure du fichier et les pages, jamais le contenu ; codes de sortie 0/1/2.
+  structure du fichier et les pages, jamais le contenu ; codes de sortie 0/1/2/3.
   `Document::from_file` permet de rapporter la structure même si l'arbre est invalide.
 - Fixture `page-tree.pdf` (arbre imbriqué, héritage, rotation) et comparaison de
   l'ordre des pages avec `qpdf --show-pages`.
@@ -48,6 +55,21 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
 - Projet renommé CastlePDF (auparavant CastleEngine, homonyme d'un moteur de jeu) :
   dépôt, application, identifiant `io.github.cadeneras.castlepdf`, paquets et binaire
   `castle-pdf-desktop`.
+
+### Limites connues
+
+- Lecture stricte, sans réparation : un fichier abîmé (offsets faux, table xref
+  irrégulière, `/Length` erroné) est refusé avec une erreur localisée.
+- Non pris en charge, avec erreur `Unsupported` explicite : xref et object streams
+  (fichiers PDF 1.5+ compressés, très courants), fichiers hybrides, chiffrement,
+  données de stream externes. Beaucoup de PDF réels sont donc encore refusés.
+- Filtres de flux non décodés (`FlateDecode` etc.) : les données sont localisées, pas lues.
+- Pas encore pris en charge dans le modèle : `/UserUnit`, `BleedBox`/`TrimBox`/`ArtBox`,
+  `/Version` du catalogue, libellés de pages.
+- Budgets par défaut non calibrés sur un corpus réel : un document de plus d'un
+  million d'objets ou d'entrées xref est refusé.
+- Oracles : qpdf compare entrées xref et ordre des pages des 3 fixtures publiques ;
+  boîtes et rotation ne sont pas encore comparées à un oracle indépendant.
 
 ## [0.1.0-alpha.1] — 2026-11-06
 
@@ -79,5 +101,6 @@ l'architecture, le worker, les budgets et la CI. Aucun binaire n'est distribué.
 - Isolation OS du worker (sandbox) non implémentée.
 - Licence du projet non décidée.
 
-[Non publié]: https://github.com/CadenEras/CastlePDF/compare/v0.1.0-alpha.1...HEAD
+[Non publié]: https://github.com/CadenEras/CastlePDF/compare/v0.1.0-alpha.2...HEAD
+[0.1.0-alpha.2]: https://github.com/CadenEras/CastlePDF/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/CadenEras/CastlePDF/releases/tag/v0.1.0-alpha.1

@@ -29,7 +29,7 @@ mémoire bornée, réactivité et maintenabilité.
 | Phase | Contenu | État |
 | --- | --- | --- |
 | P0 — fondations | Workspace, UI vide, protocole worker, budgets, corpus, CI trois OS | Terminée (`v0.1.0-alpha.1`) |
-| P1 — lecture structurée | Tokenizer, objets, xref classique, pages, CLI de diagnostic | Fait : tokenizer, objets, xref classique, pages, CLI `inspect` |
+| P1 — lecture structurée | Tokenizer, objets, xref classique, pages, CLI de diagnostic | Terminée (`v0.1.0-alpha.2`) : xref classique, pages, CLI `inspect` |
 | P2 et suivantes | Rendu, texte, écriture, annotations, fonctions avancées | Voir la [feuille de route](docs/ROADMAP.md) |
 
 Le support PDF sera publié sous forme de matrice de capacités. Toute capacité absente
