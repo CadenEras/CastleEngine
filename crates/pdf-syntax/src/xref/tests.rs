@@ -748,6 +748,44 @@ fn debug_output_never_contains_document_bytes() {
     assert!(printed.contains("len"), "{printed}");
 }
 
+#[test]
+fn decoded_stream_data_resolves_filter_entries_once() {
+    // Unfiltered data keeps the test about resolution, not decoding.
+    let bytes = simple(&[
+        CATALOG,
+        // 2: /Filter given by a reference to a stream: refused.
+        "<< /Length 3 /Filter 5 0 R >>\nstream\nabc\nendstream",
+        // 3: /Filter given by a reference to a reference: refused.
+        "<< /Length 3 /Filter 6 0 R >>\nstream\nabc\nendstream",
+        // 4: /Filter and /DecodeParms by reference to null and to a dictionary.
+        "<< /Length 3 /Filter 9 0 R /DecodeParms 7 0 R >>\nstream\nabc\nendstream",
+        "<< /Length 0 >>\nstream\n\nendstream",
+        "5 0 R",
+        "<< /Predictor 1 >>",
+    ]);
+    let file = open(&bytes).expect("valid file");
+    let decode = |number| {
+        let Ok(IndirectValue::Stream(s)) = value(&file, number) else {
+            panic!("stream {number}");
+        };
+        file.decoded_stream_data(&s, &mut budget())
+    };
+    for number in [2, 3] {
+        assert!(
+            matches!(
+                decode(number),
+                Err(Error::Malformed {
+                    kind: MalformedKind::InvalidFilter,
+                    ..
+                })
+            ),
+            "object {number}"
+        );
+    }
+    // A free /Filter reference is null (ISO 32000-2, 7.3.10): no filter.
+    assert_eq!(decode(4), Ok(b"abc".to_vec()));
+}
+
 proptest! {
     /// Corrupting any byte of a valid file never panics; whatever opens can be
     /// resolved entry by entry without leaving the file.

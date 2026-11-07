@@ -35,3 +35,13 @@ test('xref offsets point at their objects', () => {
   const offsets = [...pdf.matchAll(/(\d{10}) 00000 n /g)].map(m => Number(m[1]));
   offsets.forEach((offset, i) => assert.ok(pdf.startsWith(`${i + 1} 0 obj`, offset)));
 });
+
+test('the deterministic zlib encoder is real Deflate', async () => {
+  const { inflateSync } = await import('node:zlib');
+  const { zlibFixedHuffman } = await import('../make-fixtures.mjs');
+  const all = String.fromCharCode(...Array.from({ length: 256 }, (_, i) => i));
+  for (const text of ['', 'a', 'BT /F1 24 Tf (x) Tj ET', all, all.repeat(40)]) {
+    const encoded = Buffer.from(zlibFixedHuffman(text), 'latin1');
+    assert.equal(inflateSync(encoded).toString('latin1'), text);
+  }
+});

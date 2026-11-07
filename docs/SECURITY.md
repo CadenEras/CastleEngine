@@ -68,7 +68,9 @@ RustSec tournent dans le workflow `advisories` (hebdomadaire, sur `main` et quan
 toutes atteintes par le shell Tauri et jamais par `crates/*` : MPL-2.0 pour `cssparser`,
 `cssparser-macros`, `dtoa-short`, `selectors` et `option-ext` ; RUSTSEC-2024-0370
 (`proc-macro-error`, macro de compilation du backend GTK Linux), à revoir avec Tauri 3.
-Dependabot propose chaque semaine les mises à jour Cargo, npm et actions ; le cache
+Codec dans le cœur : `miniz_oxide` 0.9.1 (Flate, `#![forbid(unsafe_code)]`, version
+exacte épinglée) et sa dépendance `adler2`, sans code natif (ADR-0003) ; sortie facturée
+au budget fenêtre par fenêtre. Dependabot propose chaque semaine les mises à jour Cargo, npm et actions ; le cache
 Rust de la CI n'est écrit que depuis `main`, jamais depuis une PR.
 
 CI de PR sans secrets, jeton en lecture seule, actions épinglées à un commit revu,

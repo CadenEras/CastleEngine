@@ -43,4 +43,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "flate"
+path = "fuzz_targets/flate.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

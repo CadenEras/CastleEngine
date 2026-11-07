@@ -51,8 +51,65 @@ export function appendUpdate(base, objects, size) {
   return Buffer.concat(chunks);
 }
 
-function stream(content) {
-  return `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream`;
+function stream(content, extra = '') {
+  return `<< /Length ${Buffer.byteLength(content, 'latin1')}${extra} >>\nstream\n${content}\nendstream`;
+}
+
+// Deterministic zlib (RFC 1950/1951) with one fixed-Huffman block of literals
+// only: real Huffman-coded Deflate whose bytes never depend on the Node or
+// zlib version that runs this script. Returns a latin1 string.
+export function zlibFixedHuffman(text) {
+  const input = Buffer.from(text, 'latin1');
+  const out = [0x78, 0x01];
+  let bitBuffer = 0;
+  let bitCount = 0;
+  const writeBits = (value, count) => {
+    for (let i = 0; i < count; i += 1) {
+      bitBuffer |= ((value >> i) & 1) << bitCount;
+      bitCount += 1;
+      if (bitCount === 8) {
+        out.push(bitBuffer);
+        bitBuffer = 0;
+        bitCount = 0;
+      }
+    }
+  };
+  // Huffman codes are packed most significant bit first.
+  const writeCode = (code, length) => {
+    for (let i = length - 1; i >= 0; i -= 1) writeBits((code >> i) & 1, 1);
+  };
+  const literal = symbol => {
+    if (symbol < 144) writeCode(0x30 + symbol, 8);
+    else if (symbol < 256) writeCode(0x190 + symbol - 144, 9);
+    else writeCode(symbol - 256, 7);
+  };
+  writeBits(1, 1); // BFINAL
+  writeBits(1, 2); // BTYPE = 01, fixed Huffman codes
+  for (const byte of input) literal(byte);
+  literal(256); // end of block
+  if (bitCount > 0) out.push(bitBuffer);
+  let a = 1;
+  let b = 0;
+  for (const byte of input) {
+    a = (a + byte) % 65521;
+    b = (b + a) % 65521;
+  }
+  const adler = ((b << 16) | a) >>> 0;
+  out.push((adler >>> 24) & 0xff, (adler >>> 16) & 0xff, (adler >>> 8) & 0xff, adler & 0xff);
+  return Buffer.from(out).toString('latin1');
+}
+
+// PNG "Up" prediction (filter type 2) of rows of `columns` bytes.
+function pngUp(bytes, columns) {
+  const out = [];
+  for (let row = 0; row * columns < bytes.length; row += 1) {
+    out.push(2);
+    for (let i = 0; i < columns; i += 1) {
+      const above = row === 0 ? 0 : bytes[(row - 1) * columns + i];
+      out.push((bytes[row * columns + i] - above) & 0xff);
+    }
+  }
+  return Buffer.from(out).toString('latin1');
 }
 
 function onePage(text) {
@@ -83,6 +140,20 @@ export const fixtures = {
     stream('BT /F1 24 Tf 72 770 Td (Page 1) Tj ET'),
     stream('BT /F1 24 Tf 72 520 Td (Page 2) Tj ET'),
     stream('BT /F1 24 Tf 72 770 Td (Page 3) Tj ET'),
+  ]),
+  // One page whose content stream is Flate-compressed; a /Filter given by an
+  // indirect reference; a data stream with a PNG predictor (4 columns).
+  'flate.pdf': buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] '
+      + '/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    stream(zlibFixedHuffman('BT /F1 24 Tf 72 770 Td (CastlePDF Flate fixture) Tj ET'),
+      ' /Filter 6 0 R'),
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '/FlateDecode',
+    stream(zlibFixedHuffman(pngUp(Buffer.from([1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12]), 4)),
+      ' /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 4 >>'),
   ]),
   // The same page, then an incremental update replacing its content stream.
   'incremental.pdf': appendUpdate(

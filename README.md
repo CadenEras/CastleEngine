@@ -30,7 +30,8 @@ mémoire bornée, réactivité et maintenabilité.
 | --- | --- | --- |
 | P0 — fondations | Workspace, UI vide, protocole worker, budgets, corpus, CI trois OS | Terminée (`v0.1.0-alpha.1`) |
 | P1 — lecture structurée | Tokenizer, objets, xref classique, pages, CLI de diagnostic | Terminée (`v0.1.0-alpha.2`) : xref classique, pages, CLI `inspect` |
-| P2 et suivantes | Rendu, texte, écriture, annotations, fonctions avancées | Voir la [feuille de route](docs/ROADMAP.md) |
+| P2 — lecteur utile | Flate, flux xref, interpréteur, rendu tuilé, polices, images | En cours ([ADR-0003](docs/adr/0003-p2-render-pipeline.md)) : filtre Flate fait |
+| P3 et suivantes | Texte, écriture, annotations, fonctions avancées | Voir la [feuille de route](docs/ROADMAP.md) |
 
 Le support PDF sera publié sous forme de matrice de capacités. Toute capacité absente
 renvoie une erreur explicite plutôt qu'un résultat approximatif.
@@ -39,7 +40,7 @@ renvoie une erreur explicite plutôt qu'un résultat approximatif.
 
 ```text
 crates/
-  pdf-syntax/      budgets, annulation, source d'entrée, tokenizer, objets, xref classique
+  pdf-syntax/      budgets, annulation, source d'entrée, tokenizer, objets, xref classique, Flate
   pdf-document/    catalogue, arbre des pages, attributs hérités
   pdf-cli/         binaire castle-pdf : diagnostic `inspect` (structure, pages)
   pdf-worker/      processus isolé : trames bornées, protocole versionné, annulation

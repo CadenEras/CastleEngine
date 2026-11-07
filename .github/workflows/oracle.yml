@@ -55,3 +55,4 @@ jobs:
           cargo test -p pdf-syntax -p pdf-document --locked --test qpdf_oracle -- --nocapture 2>&1 | tee oracle.log
           grep -q "fixtures match qpdf" oracle.log
           grep -q "fixtures: pages match qpdf" oracle.log
+          grep -q "streams: decoded data match qpdf" oracle.log
