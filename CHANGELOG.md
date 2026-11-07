@@ -25,6 +25,9 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
   ne sont plus refusés avec `Unsupported(XrefStreams)`. `SectionKind` décrit chaque
   section ; `castle-pdf inspect` compte les objets compressés.
 - Fixtures `objstm.pdf` et `hybrid.pdf` ; l'oracle qpdf compare aussi les entrées compressées.
+  Divergence connue : quand la table d'un fichier hybride liste comme libres les objets
+  compressés, CastlePDF (comme qpdf 10) suit le flux `/XRefStm`, alors que qpdf 12 laisse
+  l'entrée libre masquer l'objet ; la fixture évite cette forme, les tests unitaires la couvrent.
 - Fixture `flate.pdf` (encodeur zlib déterministe du générateur), comparaison de chaque
   flux décodé avec `qpdf --filtered-stream-data`, cible de fuzzing `flate`.
 

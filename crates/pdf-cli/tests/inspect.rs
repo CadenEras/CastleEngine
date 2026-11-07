@@ -209,7 +209,7 @@ fn xref_stream_and_hybrid_reports() {
     let (code, out, err) = inspect(&corpus("hybrid.pdf"));
     assert_eq!(code, 0, "{err}");
     assert!(
-        out.contains("revisions: 1\n  section 1: xref table at 693, 8 entries\n  section 2: hybrid xref stream at 500, 3 entries\n"),
+        out.contains("revisions: 1\n  section 1: xref table at 693, 5 entries\n  section 2: hybrid xref stream at 500, 3 entries\n"),
         "{out}"
     );
 }

@@ -168,14 +168,22 @@ export function buildXrefStreamPdf(objects, objstm, { hybrid = false } = {}) {
     chunks.push(Buffer.from(`startxref\n${xrefOffset}\n%%EOF\n`, 'latin1'));
     return Buffer.concat(chunks);
   }
-  // Classic table covering every object: compressed objects are listed as
-  // free, as producers do for readers without cross-reference streams.
-  let table = `xref\n0 ${size}\n`;
-  for (let number = 0; number < size; number += 1) {
-    const [type, field2, field3] = entries.get(number) ?? [0, 0, 0];
-    table += type === 1
-      ? `${String(field2).padStart(10, '0')} ${String(field3).padStart(5, '0')} n \n`
-      : `0000000000 ${number === 0 ? '65535' : '00000'} f \n`;
+  // Classic table: every uncompressed object, in contiguous runs; compressed
+  // objects are absent. (Listing them as free is also common, but qpdf 12
+  // then lets the free entry hide the stream entry while qpdf 10 and
+  // CastlePDF do not; the unit tests cover that shape, the oracle this one.)
+  const direct = [...entries.keys()].filter(n => entries.get(n)[0] !== 2).sort((a, b) => a - b);
+  let table = 'xref\n';
+  for (let i = 0; i < direct.length;) {
+    let j = i;
+    while (j + 1 < direct.length && direct[j + 1] === direct[j] + 1) j += 1;
+    table += `${direct[i]} ${j - i + 1}\n`;
+    for (let k = i; k <= j; k += 1) {
+      const [type, field2, field3] = entries.get(direct[k]);
+      const kind = type === 0 ? 'f' : 'n';
+      table += `${String(field2).padStart(10, '0')} ${String(field3).padStart(5, '0')} ${kind} \n`;
+    }
+    i = j + 1;
   }
   const tableOffset = length;
   chunks.push(Buffer.from(`${table}trailer\n<< /Size ${size} /Root 1 0 R /XRefStm ${xrefOffset} >>\n`
