@@ -10,6 +10,10 @@ license.workspace = true
 [lints]
 workspace = true
 
+[dependencies]
+# Flate decoding (ADR-0003): no unsafe code, MIT OR Zlib OR Apache-2.0.
+miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
+
 [dev-dependencies]
 # Property tests (ADR-0002); test-only, MIT OR Apache-2.0.
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }

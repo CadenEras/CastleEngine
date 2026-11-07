@@ -15,7 +15,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use pdf_syntax::{Budget, CancellationToken, MemorySource, PdfFile, ResourceLimits, XrefEntry};
+use pdf_syntax::{
+    Budget, CancellationToken, IndirectValue, MemorySource, ObjectId, PdfFile, ResourceLimits,
+    XrefEntry,
+};
 
 /// (number, generation) -> offset of in-use entries.
 type Entries = BTreeMap<(u32, u16), u64>;
@@ -89,4 +92,65 @@ fn cross_reference_entries_match_qpdf() {
     }
     assert!(compared > 0, "no fixture compared");
     eprintln!("{compared} fixtures match qpdf");
+}
+
+/// Raw stdout of qpdf (stream data is binary).
+fn qpdf_bytes(qpdf: &str, args: &[&str], path: &Path) -> Vec<u8> {
+    let output = Command::new(qpdf)
+        .args(args)
+        .arg(path)
+        .output()
+        .expect("qpdf runs");
+    assert!(
+        output.status.success(),
+        "qpdf {args:?} {}: {}",
+        path.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
+/// Every stream of every fixture decodes to the bytes of
+/// `qpdf --show-object=N --filtered-stream-data` (filters and predictors).
+#[test]
+fn decoded_streams_match_qpdf() {
+    let Ok(qpdf_path) = std::env::var("CASTLE_QPDF") else {
+        eprintln!("CASTLE_QPDF not set: qpdf differential test skipped");
+        return;
+    };
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus/public");
+    let mut compared = 0;
+    for entry in std::fs::read_dir(&dir).expect("corpus directory") {
+        let path = entry.expect("directory entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("pdf") {
+            continue;
+        }
+        let limits = ResourceLimits::default();
+        let bytes = std::fs::read(&path).expect("fixture readable");
+        let source = MemorySource::from_vec(bytes, &limits).expect("within limits");
+        let mut budget = Budget::new(limits, CancellationToken::new());
+        let file = PdfFile::open(source, &mut budget).expect("valid fixture");
+        let ids: Vec<ObjectId> = file
+            .entries()
+            .filter_map(|(number, entry)| match entry {
+                XrefEntry::InUse { generation, .. } => Some(ObjectId { number, generation }),
+                XrefEntry::Free { .. } => None,
+            })
+            .collect();
+        for id in ids {
+            let IndirectValue::Stream(stream) = file.resolve(id, &mut budget).expect("resolvable")
+            else {
+                continue;
+            };
+            let ours = file
+                .decoded_stream_data(&stream, &mut budget)
+                .unwrap_or_else(|e| panic!("{} object {}: {e}", path.display(), id.number));
+            let show = format!("--show-object={},{}", id.number, id.generation);
+            let theirs = qpdf_bytes(&qpdf_path, &[&show, "--filtered-stream-data"], &path);
+            assert_eq!(ours, theirs, "{} object {}", path.display(), id.number);
+            compared += 1;
+        }
+    }
+    assert!(compared > 0, "no stream compared");
+    eprintln!("{compared} streams: decoded data match qpdf");
 }

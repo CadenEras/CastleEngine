@@ -74,6 +74,9 @@ pub enum Capability {
     Encryption,
     /// A header version other than 1.0 to 1.7 or 2.0.
     PdfVersion,
+    /// A stream filter other than `FlateDecode`, or predictor parameters not
+    /// implemented yet (TIFF prediction on components other than 8 bits).
+    StreamFilter,
 }
 
 /// Precise reason for an `Error::Malformed`.
@@ -132,6 +135,14 @@ pub enum MalformedKind {
     XrefPrevCycle,
     /// The object at a cross-reference offset is not the one referenced.
     ObjectIdMismatch,
+    /// `/Filter` is not a name or an array of names, or `/DecodeParms` does
+    /// not match it.
+    InvalidFilter,
+    /// Flate data that is not a valid zlib stream (header, codes, checksum).
+    InvalidFlateData,
+    /// Predictor parameters out of range, or predicted data that is not a
+    /// whole number of rows or uses an unknown PNG filter type.
+    InvalidPredictor,
 }
 
 impl fmt::Display for Error {

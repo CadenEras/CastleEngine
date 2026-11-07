@@ -176,6 +176,33 @@ impl<S: Source> PdfFile<S> {
         self.source.read(stream.data.clone())
     }
 
+    /// Decoded bytes of a stream: `/Filter` and `/DecodeParms` are resolved
+    /// once if they are references (a stream or a second reference is
+    /// refused), then `decode_stream` applies the filters under `budget`.
+    pub fn decoded_stream_data(
+        &self,
+        stream: &Stream,
+        budget: &mut Budget,
+    ) -> Result<Vec<u8>, Error> {
+        let offset = stream.data.start;
+        let mut filtering = Dictionary::new();
+        for key in [&b"Filter"[..], b"DecodeParms"] {
+            let value = match stream.dictionary.get(key) {
+                None => continue,
+                Some(Object::Reference(id)) => match self.resolve(*id, budget)? {
+                    IndirectValue::Object(Object::Reference(_)) | IndirectValue::Stream(_) => {
+                        return Err(malformed(offset, MalformedKind::InvalidFilter));
+                    }
+                    IndirectValue::Object(object) => object,
+                },
+                Some(object) => object.clone(),
+            };
+            filtering.insert(key.to_vec(), value);
+        }
+        let encoded = self.stream_data(stream)?;
+        crate::filter::decode_stream(&filtering, &encoded, offset, budget)
+    }
+
     fn locate(&self, id: ObjectId) -> Option<u64> {
         match self.entries.get(&id.number) {
             Some(XrefEntry::InUse { offset, generation }) if *generation == id.generation => {

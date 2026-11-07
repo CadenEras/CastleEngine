@@ -7,6 +7,19 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
 
 ## [Non publié]
 
+### Ajouté
+
+- ADR-0003 accepté : ordre de P2 (Flate et flux xref avant l'interpréteur),
+  `vello_cpu`, `miniz_oxide`, tuiles 256 px en octets bruts, oracles de rendu, ARM64.
+- `pdf-syntax` : filtre `FlateDecode` (ISO 32000-2, 7.4.4) via `miniz_oxide` 0.9.1
+  (sans `unsafe`) — décodage incrémental, chaque fenêtre de 64 Kio facturée à
+  `max_decoded_bytes` avant d'être conservée (bombes de décompression arrêtées à la
+  limite), checksum vérifié, chaînes de filtres, prédicteurs PNG (10–15) et TIFF (2,
+  composantes 8 bits) ; `PdfFile::decoded_stream_data` résout `/Filter` et
+  `/DecodeParms` indirects. Autres filtres : `Unsupported(StreamFilter)`.
+- Fixture `flate.pdf` (encodeur zlib déterministe du générateur), comparaison de chaque
+  flux décodé avec `qpdf --filtered-stream-data`, cible de fuzzing `flate`.
+
 ## [0.1.0-alpha.2] — 2026-11-07
 
 Fin de la phase P1 (lecture structurée). Le moteur lit la structure de PDF à table

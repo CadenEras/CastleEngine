@@ -84,3 +84,34 @@ fn incremental_fixture_reads_the_newest_revision() {
         b"BT /F1 24 Tf 72 770 Td (CastlePDF updated revision) Tj ET"
     );
 }
+
+#[test]
+fn flate_fixture_decodes_content_and_predicted_data() {
+    let file = open("flate.pdf");
+    let mut budget = Budget::new(ResourceLimits::default(), CancellationToken::new());
+    let decoded = |number| {
+        let IndirectValue::Stream(stream) = resolve(&file, number) else {
+            panic!("object {number} is a stream");
+        };
+        let mut budget = Budget::new(ResourceLimits::default(), CancellationToken::new());
+        file.decoded_stream_data(&stream, &mut budget)
+            .expect("decodable")
+    };
+    // /Filter 6 0 R: the filter name is resolved through the table.
+    assert_eq!(
+        decoded(4),
+        b"BT /F1 24 Tf 72 770 Td (CastlePDF Flate fixture) Tj ET"
+    );
+    assert_eq!(decoded(7), vec![1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12]);
+    // Unfiltered streams of other fixtures decode to their raw bytes.
+    let minimal = open("minimal.pdf");
+    let IndirectValue::Stream(stream) = resolve(&minimal, 4) else {
+        panic!("content stream");
+    };
+    assert_eq!(
+        minimal
+            .decoded_stream_data(&stream, &mut budget)
+            .expect("raw"),
+        minimal.stream_data(&stream).expect("raw").into_owned()
+    );
+}
