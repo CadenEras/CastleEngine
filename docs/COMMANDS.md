@@ -82,7 +82,7 @@ compare, pour chaque fixture de `tests/corpus/public` (toutes valides), les entr
 
 ## CLI de diagnostic `castle-pdf` (crate `pdf-cli`)
 
-Interface effective, relevée sur `--help` (version 0.1.0-alpha.1) :
+Interface effective, relevée sur `--help` (version 0.1.0-alpha.2) :
 
 ```sh
 cargo run -p pdf-cli -- inspect <fichier>   # castle-pdf inspect <fichier>
