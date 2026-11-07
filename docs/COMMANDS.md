@@ -86,15 +86,18 @@ Interface effective, relevée sur `--help` (version 0.1.0-alpha.1) :
 
 ```sh
 cargo run -p pdf-cli -- inspect <fichier>   # castle-pdf inspect <fichier>
-cargo run -p pdf-cli -- --help
+cargo run -p pdf-cli -- --help                # ou -h
 cargo run -p pdf-cli -- --version
 ```
 
 `inspect` affiche la structure (taille, version, `startxref`, révisions et sections xref,
-objets en usage/libres, clés du trailer, racine, pages avec objet, MediaBox, CropBox et
-rotation), jamais le contenu du document. La structure du fichier est affichée même si
-l'arbre des pages est invalide. Codes de sortie : 0 succès, 1 document illisible (erreur
-sur la sortie d'erreur), 2 usage incorrect. Limites par défaut de `ResourceLimits`.
+objets en usage/libres, clés standard du trailer (les autres sont seulement comptées),
+racine, pages avec objet, MediaBox, CropBox et rotation), jamais le contenu du document ni
+le chemin du fichier. Le rapport est écrit ligne par ligne, chaque ligne bornée (notation
+scientifique au-delà de 1e15). Seul un fichier régulier est lu. La structure du fichier
+est affichée même si l'arbre des pages est invalide. Codes de sortie : 0 succès,
+1 document illisible (erreur sur la sortie d'erreur), 2 usage incorrect, 3 écriture du
+rapport impossible (pipe fermé). Limites par défaut de `ResourceLimits`.
 
 Benchmarks, autres tests différentiels et vérifications de conformité seront ajoutés avec
 leurs fixtures et outils. Ne pas inventer d'option à `castle-pdf` : relire son `--help`.

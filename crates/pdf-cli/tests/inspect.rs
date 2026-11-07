@@ -79,7 +79,15 @@ fn unreadable_and_malformed_inputs_exit_with_1() {
     let (code, out, err) = inspect(Path::new("this-file-does-not-exist.pdf"));
     assert_eq!(code, 1);
     assert_eq!(out, "");
-    assert!(err.starts_with("error: cannot open"), "{err}");
+    assert!(err.starts_with("error: cannot open the file"), "{err}");
+    // The path is never echoed.
+    assert!(!err.contains("this-file-does-not-exist"), "{err}");
+
+    // A directory is refused before any read, on every OS.
+    let (code, out, err) = inspect(Path::new(env!("CARGO_MANIFEST_DIR")));
+    assert_eq!(code, 1);
+    assert_eq!(out, "");
+    assert_eq!(err, "error: not a regular file\n");
 
     let (code, out, err) = inspect(&scratch("not-a-pdf.pdf", b"hello"));
     assert_eq!(code, 1);
@@ -108,4 +116,72 @@ fn the_structure_is_reported_before_a_page_tree_error() {
         err,
         "error: invalid document structure at object 2 0: CountMismatch\n"
     );
+}
+
+/// Builds a classic-xref file: object n is `bodies[n - 1]`.
+fn build(bodies: &[&str], trailer_extra: &str) -> Vec<u8> {
+    let mut out = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, body) in bodies.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{body}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    let size = bodies.len() + 1;
+    out.extend_from_slice(format!("xref\n0 {size}\n0000000000 65535 f \n").as_bytes());
+    for offset in offsets {
+        out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {size} /Root 1 0 R{trailer_extra} >>\nstartxref\n{xref}\n%%EOF\n"
+        )
+        .as_bytes(),
+    );
+    out
+}
+
+const CATALOG: &str = "<< /Type /Catalog /Pages 2 0 R >>";
+const PAGE: &str = "<< /Type /Page /Parent 2 0 R >>";
+
+#[test]
+fn encrypted_documents_are_reported_as_unsupported() {
+    let bytes = build(
+        &[CATALOG, "<< /Type /Pages /Kids [] /Count 0 >>"],
+        " /Encrypt << /Filter /Standard >>",
+    );
+    let (code, out, err) = inspect(&scratch("encrypted.pdf", &bytes));
+    assert_eq!(code, 1);
+    assert!(out.starts_with("size: "));
+    assert_eq!(err, "error: unsupported PDF capability: Encryption\n");
+}
+
+#[test]
+fn nonstandard_trailer_keys_are_counted_not_named() {
+    let bytes = build(
+        &[CATALOG, "<< /Type /Pages /Kids [] /Count 0 >>"],
+        " /PrivateNote#0A#1B 1 /Other (secret)",
+    );
+    let (code, out, _) = inspect(&scratch("trailer-keys.pdf", &bytes));
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("trailer keys: /Root /Size (+2 other)\n"),
+        "{out}"
+    );
+    assert!(!out.contains("Private") && !out.contains("secret"), "{out}");
+}
+
+#[test]
+fn extreme_coordinates_print_on_bounded_lines() {
+    let huge = format!("17{}.0", "0".repeat(307));
+    let root = format!("<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [-{huge} 0 {huge} 1] >>");
+    let bytes = build(&[CATALOG, root.as_str(), PAGE], "");
+    let (code, out, err) = inspect(&scratch("extreme-box.pdf", &bytes));
+    assert_eq!(code, 0, "{err}");
+    let line = out
+        .lines()
+        .find(|l| l.starts_with("  page 1:"))
+        .expect("page line");
+    assert!(line.contains("media box [-1.7e308 0 1.7e308 1]"), "{line}");
+    assert!(line.len() < 200, "{line}");
 }

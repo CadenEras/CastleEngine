@@ -1,6 +1,9 @@
 //! `castle-pdf inspect <file>`: structure report, never document content.
+//!
+//! The report is written line by line (no whole-report buffer); every line is
+//! bounded: numbers beyond 1e15 use scientific notation, and only standard
+//! trailer keys are named, other keys being counted.
 
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -10,19 +13,39 @@ use pdf_syntax::{
     Budget, CancellationToken, MemorySource, Object, PdfFile, ResourceLimits, Source, XrefEntry,
 };
 
-/// Writes the report to `out` and errors to `err`; returns the exit code.
-/// The file structure is reported even when the page tree turns out invalid.
+/// Trailer keys of ISO 32000-2 (table 15), the only ones printed by name.
+const TRAILER_KEYS: [&[u8]; 7] = [
+    b"Encrypt", b"ID", b"Info", b"Prev", b"Root", b"Size", b"XRefStm",
+];
+
+/// Writes the report to `out` and errors to `err`; returns 0 or 1. An `Err`
+/// means that writing the report itself failed.
 pub fn run(path: &Path, out: &mut dyn Write, err: &mut dyn Write) -> io::Result<u8> {
     let limits = ResourceLimits::default();
-    let file = match File::open(path) {
-        Ok(file) => file,
+    // The path is not echoed: it may hold control characters or private names.
+    // The type is checked on the path first (Windows refuses to open a
+    // directory as a file) and again on the opened handle.
+    let opened = std::fs::metadata(path).and_then(|m| {
+        if m.is_file() {
+            File::open(path)
+                .and_then(|f| f.metadata().map(|m| (f, m)))
+                .map(|(f, m)| m.is_file().then_some((f, m.len())))
+        } else {
+            Ok(None)
+        }
+    });
+    let (file, size) = match opened {
+        Ok(Some(opened)) => opened,
+        Ok(None) => {
+            writeln!(err, "error: not a regular file")?;
+            return Ok(1);
+        }
         Err(e) => {
-            writeln!(err, "error: cannot open {}: {}", path.display(), e.kind())?;
+            writeln!(err, "error: cannot open the file: {}", e.kind())?;
             return Ok(1);
         }
     };
-    let size_hint = file.metadata().ok().map(|m| m.len());
-    let source = match MemorySource::from_reader(file, size_hint, &limits) {
+    let source = match MemorySource::from_reader(file, Some(size), &limits) {
         Ok(source) => source,
         Err(e) => {
             writeln!(err, "error: {e}")?;
@@ -39,10 +62,10 @@ pub fn run(path: &Path, out: &mut dyn Write, err: &mut dyn Write) -> io::Result<
             return Ok(1);
         }
     };
-    out.write_all(file_report(&file).as_bytes())?;
+    file_report(&file, out)?;
     match Document::from_file(file, &mut budget) {
         Ok(document) => {
-            out.write_all(pages_report(&document).as_bytes())?;
+            pages_report(&document, out)?;
             Ok(0)
         }
         Err(e) => {
@@ -52,20 +75,19 @@ pub fn run(path: &Path, out: &mut dyn Write, err: &mut dyn Write) -> io::Result<
     }
 }
 
-fn file_report<S: Source>(file: &PdfFile<S>) -> String {
-    let mut text = String::new();
+fn file_report<S: Source>(file: &PdfFile<S>, out: &mut dyn Write) -> io::Result<()> {
     let version = file.version();
-    let _ = writeln!(text, "version: {}.{}", version.major, version.minor);
-    let _ = writeln!(text, "startxref: {}", file.startxref());
-    let _ = writeln!(text, "revisions: {}", file.revisions());
+    writeln!(out, "version: {}.{}", version.major, version.minor)?;
+    writeln!(out, "startxref: {}", file.startxref())?;
+    writeln!(out, "revisions: {}", file.revisions())?;
     for (i, section) in file.sections().iter().enumerate() {
-        let _ = writeln!(
-            text,
+        writeln!(
+            out,
             "  section {}: xref at {}, {} entries",
             i + 1,
             section.offset,
             section.entries
-        );
+        )?;
     }
     let (in_use, free) = file
         .entries()
@@ -73,25 +95,36 @@ fn file_report<S: Source>(file: &PdfFile<S>) -> String {
             XrefEntry::InUse { .. } => (u + 1, f),
             XrefEntry::Free { .. } => (u, f + 1),
         });
-    let _ = writeln!(text, "objects: {in_use} in use, {free} free");
+    writeln!(out, "objects: {in_use} in use, {free} free")?;
     let trailer = file.trailer();
-    let keys: Vec<String> = trailer.iter().map(|(key, _)| name(key)).collect();
-    let _ = writeln!(text, "trailer keys: {}", keys.join(" "));
+    let mut known = Vec::new();
+    let mut others = 0_usize;
+    for (key, _) in trailer.iter() {
+        match TRAILER_KEYS.iter().find(|k| **k == key) {
+            Some(k) => known.push(String::from_utf8_lossy(k).into_owned()),
+            None => others += 1,
+        }
+    }
+    let names: Vec<String> = known.iter().map(|k| format!("/{k}")).collect();
+    write!(out, "trailer keys: {}", names.join(" "))?;
+    if others > 0 {
+        write!(out, " (+{others} other)")?;
+    }
+    writeln!(out)?;
     if let Some(root) = file.root() {
-        let _ = writeln!(text, "root: {} {} R", root.number, root.generation);
+        writeln!(out, "root: {} {} R", root.number, root.generation)?;
     }
     if let Some(size) = trailer.get(b"Size").and_then(Object::as_integer) {
-        let _ = writeln!(text, "size entry: {size}");
+        writeln!(out, "size entry: {size}")?;
     }
-    text
+    Ok(())
 }
 
-fn pages_report<S: Source>(document: &Document<S>) -> String {
-    let mut text = String::new();
-    let _ = writeln!(text, "pages: {}", document.page_count());
+fn pages_report<S: Source>(document: &Document<S>, out: &mut dyn Write) -> io::Result<()> {
+    writeln!(out, "pages: {}", document.page_count())?;
     for (i, page) in document.pages().iter().enumerate() {
-        let _ = writeln!(
-            text,
+        writeln!(
+            out,
             "  page {}: object {} {}, media box {}, crop box {}, rotation {}",
             i + 1,
             page.id.number,
@@ -99,27 +132,29 @@ fn pages_report<S: Source>(document: &Document<S>) -> String {
             rectangle(&page.media_box),
             rectangle(&page.crop_box),
             page.rotation
-        );
+        )?;
     }
-    text
+    Ok(())
 }
 
 fn rectangle(r: &Rectangle) -> String {
-    format!("[{} {} {} {}]", r.llx, r.lly, r.urx, r.ury)
+    format!(
+        "[{} {} {} {}]",
+        number(r.llx),
+        number(r.lly),
+        number(r.urx),
+        number(r.ury)
+    )
 }
 
-/// A name as written in PDF, with `#xx` for bytes outside printable ASCII, so
-/// that the report stays one line of plain text whatever the input holds.
-fn name(bytes: &[u8]) -> String {
-    let mut text = String::from("/");
-    for &b in bytes {
-        if b.is_ascii_graphic() && b != b'#' && b != b'/' {
-            text.push(char::from(b));
-        } else {
-            let _ = write!(text, "#{b:02X}");
-        }
+/// Plain notation for ordinary values, scientific beyond 1e15, so that one
+/// coordinate never prints hundreds of digits.
+fn number(value: f64) -> String {
+    if value.abs() < 1e15 {
+        format!("{value}")
+    } else {
+        format!("{value:e}")
     }
-    text
 }
 
 #[cfg(test)]
@@ -127,16 +162,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn names_are_escaped() {
-        assert_eq!(name(b"Root"), "/Root");
-        assert_eq!(name(b"A B#/\n\xff"), "/A#20B#23#2F#0A#FF");
-    }
-
-    #[test]
-    fn rectangles_print_plain_numbers() {
+    fn rectangles_print_bounded_numbers() {
         assert_eq!(
             rectangle(&Rectangle::new(0.0, 0.0, 595.0, 842.5)),
             "[0 0 595 842.5]"
         );
+        assert_eq!(number(-1.7e308), "-1.7e308");
+        assert!(number(f64::MAX).len() < 32);
     }
 }
