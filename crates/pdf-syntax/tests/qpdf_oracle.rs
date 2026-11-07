@@ -20,8 +20,9 @@ use pdf_syntax::{
     XrefEntry,
 };
 
-/// (number, generation) -> offset of in-use entries.
-type Entries = BTreeMap<(u32, u16), u64>;
+/// (number, generation) -> where the object lives, in qpdf's terms:
+/// `uncompressed X` (file offset) or `compressed S I` (object stream, index).
+type Entries = BTreeMap<(u32, u16), String>;
 
 fn ours(path: &Path) -> Entries {
     let limits = ResourceLimits::default();
@@ -31,8 +32,13 @@ fn ours(path: &Path) -> Entries {
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     file.entries()
         .filter_map(|(number, entry)| match entry {
-            XrefEntry::InUse { offset, generation } => Some(((number, generation), offset)),
-            XrefEntry::Free { .. } => None,
+            XrefEntry::InUse { offset, generation } => {
+                Some(((number, generation), format!("uncompressed {offset}")))
+            }
+            XrefEntry::Compressed { stream, index } => {
+                Some(((number, 0), format!("compressed {stream} {index}")))
+            }
+            _ => None,
         })
         .collect()
 }
@@ -52,21 +58,28 @@ fn qpdf(qpdf: &str, args: &[&str], path: &Path) -> String {
     String::from_utf8(output.stdout).expect("qpdf prints UTF-8")
 }
 
-/// Parses `n/g: uncompressed; offset = X`; other entry kinds are not expected
-/// in classic-xref fixtures and fail the comparison.
+/// Parses `n/g: uncompressed; offset = X` and
+/// `n/g: compressed; stream = S, index = I`; any other line fails.
 fn theirs(show_xref: &str) -> Entries {
     show_xref
         .lines()
         .map(|line| {
-            let parsed = line
-                .split_once(": uncompressed; offset = ")
-                .and_then(|(id, offset)| {
-                    let (number, generation) = id.split_once('/')?;
-                    Some((
-                        (number.parse().ok()?, generation.parse().ok()?),
-                        offset.trim().parse().ok()?,
-                    ))
-                });
+            let parsed = line.split_once(": ").and_then(|(id, rest)| {
+                let (number, generation) = id.split_once('/')?;
+                let id = (number.parse().ok()?, generation.parse().ok()?);
+                let place = if let Some(offset) = rest.strip_prefix("uncompressed; offset = ") {
+                    format!("uncompressed {}", offset.trim().parse::<u64>().ok()?)
+                } else {
+                    let rest = rest.strip_prefix("compressed; stream = ")?;
+                    let (stream, index) = rest.split_once(", index = ")?;
+                    format!(
+                        "compressed {} {}",
+                        stream.trim().parse::<u32>().ok()?,
+                        index.trim().parse::<u32>().ok()?
+                    )
+                };
+                Some((id, place))
+            });
             parsed.unwrap_or_else(|| panic!("unexpected qpdf line: {line}"))
         })
         .collect()
@@ -133,8 +146,9 @@ fn decoded_streams_match_qpdf() {
         let ids: Vec<ObjectId> = file
             .entries()
             .filter_map(|(number, entry)| match entry {
+                // Compressed objects are never streams.
                 XrefEntry::InUse { generation, .. } => Some(ObjectId { number, generation }),
-                XrefEntry::Free { .. } => None,
+                _ => None,
             })
             .collect();
         for id in ids {

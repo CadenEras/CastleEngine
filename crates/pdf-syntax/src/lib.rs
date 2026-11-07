@@ -5,6 +5,7 @@ mod filter;
 mod lexer;
 mod limits;
 mod object;
+mod objstm;
 mod parser;
 mod source;
 mod xref;
@@ -17,4 +18,4 @@ pub use limits::{
 pub use object::{Dictionary, IndirectObject, IndirectValue, Object, ObjectId, Stream};
 pub use parser::{LengthResolver, MAX_SUPPORTED_NESTING_DEPTH, Parser};
 pub use source::{MemorySource, Source};
-pub use xref::{PdfFile, Version, XrefEntry, XrefSection};
+pub use xref::{PdfFile, SectionKind, Version, XrefEntry, XrefSection};

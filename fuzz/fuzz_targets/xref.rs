@@ -1,4 +1,5 @@
-//! Opens arbitrary bytes as a PDF file, then resolves every in-use entry.
+//! Opens arbitrary bytes as a PDF file, then resolves every in-use and
+//! compressed entry (object streams included).
 //! Properties: no panic, overflow or unbounded work; every located stream lies
 //! inside the input; resolving never recurses through /Length chains.
 #![no_main]
@@ -30,7 +31,11 @@ fuzz_target!(|data: &[u8]| {
         .entries()
         .filter_map(|(number, entry)| match entry {
             XrefEntry::InUse { generation, .. } => Some(ObjectId { number, generation }),
-            XrefEntry::Free { .. } => None,
+            XrefEntry::Compressed { .. } => Some(ObjectId {
+                number,
+                generation: 0,
+            }),
+            _ => None,
         })
         .take(256)
         .collect();

@@ -112,6 +112,90 @@ function pngUp(bytes, columns) {
   return Buffer.from(out).toString('latin1');
 }
 
+// Builds a PDF 1.5 file with a cross-reference stream (ISO 32000-2, 7.5.8).
+// `objects` maps every object number to `{ body }` (written directly) or
+// `{ compressed: true, body }` (placed in the object stream `objstm`). The
+// object stream and the cross-reference stream are Flate-encoded; the
+// cross-reference data also uses the PNG Up predictor, as producers often do.
+// With `hybrid`, a classic table lists the direct objects and a /XRefStm
+// stream lists only the compressed ones (7.5.8.4).
+export function buildXrefStreamPdf(objects, objstm, { hybrid = false } = {}) {
+  const chunks = [Buffer.from('%PDF-1.5\n%\xE2\xE3\xCF\xD3\n', 'latin1')];
+  let length = chunks[0].length;
+  const entries = new Map([[0, [0, 0, 65535]]]);
+  const write = (number, body) => {
+    entries.set(number, [1, length, 0]);
+    const chunk = Buffer.from(`${number} 0 obj\n${body}\nendobj\n`, 'latin1');
+    chunks.push(chunk);
+    length += chunk.length;
+  };
+  const numbers = Object.keys(objects).map(Number).sort((a, b) => a - b);
+  let header = '';
+  let body = '';
+  let index = 0;
+  for (const number of numbers) {
+    const object = objects[number];
+    if (object.compressed) {
+      header += `${number} ${body.length} `;
+      body += `${object.body}\n`;
+      entries.set(number, [2, objstm, index]);
+      index += 1;
+    } else {
+      write(number, object.body);
+    }
+  }
+  write(objstm, stream(zlibFixedHuffman(header + body),
+    ` /Type /ObjStm /N ${index} /First ${header.length} /Filter /FlateDecode`));
+  const xrefNumber = Math.max(...entries.keys()) + 1;
+  const size = xrefNumber + 1;
+  const xrefOffset = length;
+  entries.set(xrefNumber, [1, xrefOffset, 0]);
+  // W [1 3 1]: type, then 3-byte field 2, then 1-byte field 3.
+  const listed = hybrid
+    ? [...entries.keys()].filter(n => entries.get(n)[0] === 2).sort((a, b) => a - b)
+    : Array.from({ length: size }, (_, n) => n);
+  const records = [];
+  for (const number of listed) {
+    const [type, field2, field3] = entries.get(number) ?? [0, 0, 0];
+    records.push(type, (field2 >> 16) & 0xff, (field2 >> 8) & 0xff, field2 & 0xff, field3 & 0xff);
+  }
+  const index2 = hybrid ? ` /Index [${listed.map(n => `${n} 1`).join(' ')}]` : '';
+  const trailerKeys = hybrid ? '' : ' /Root 1 0 R';
+  write(xrefNumber, stream(zlibFixedHuffman(pngUp(Buffer.from(records), 5)),
+    ` /Type /XRef /Size ${size} /W [1 3 1]${index2}${trailerKeys}`
+    + ' /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 5 >>'));
+  if (!hybrid) {
+    chunks.push(Buffer.from(`startxref\n${xrefOffset}\n%%EOF\n`, 'latin1'));
+    return Buffer.concat(chunks);
+  }
+  // Classic table covering every object: compressed objects are listed as
+  // free, as producers do for readers without cross-reference streams.
+  let table = `xref\n0 ${size}\n`;
+  for (let number = 0; number < size; number += 1) {
+    const [type, field2, field3] = entries.get(number) ?? [0, 0, 0];
+    table += type === 1
+      ? `${String(field2).padStart(10, '0')} ${String(field3).padStart(5, '0')} n \n`
+      : `0000000000 ${number === 0 ? '65535' : '00000'} f \n`;
+  }
+  const tableOffset = length;
+  chunks.push(Buffer.from(`${table}trailer\n<< /Size ${size} /Root 1 0 R /XRefStm ${xrefOffset} >>\n`
+    + `startxref\n${tableOffset}\n%%EOF\n`, 'latin1'));
+  return Buffer.concat(chunks);
+}
+
+// The one-page document of `onePage`, with catalog, pages and font marked for
+// an object stream; the page and its content stream stay uncompressed.
+function compressedPage(text) {
+  const [catalog, pages, page, content, font] = onePage(text);
+  return {
+    1: { compressed: true, body: catalog },
+    2: { compressed: true, body: pages },
+    3: { body: page },
+    4: { body: content },
+    5: { compressed: true, body: font },
+  };
+}
+
 function onePage(text) {
   return [
     '<< /Type /Catalog /Pages 2 0 R >>',
@@ -155,6 +239,12 @@ export const fixtures = {
     stream(zlibFixedHuffman(pngUp(Buffer.from([1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12]), 4)),
       ' /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 4 >>'),
   ]),
+  // PDF 1.5 layout: catalog, pages and font compressed in object stream 6;
+  // cross-reference stream (Flate + PNG predictor) instead of a table.
+  'objstm.pdf': buildXrefStreamPdf(compressedPage('CastlePDF object stream fixture'), 6),
+  // The same objects in a hybrid file: classic table plus /XRefStm stream.
+  'hybrid.pdf': buildXrefStreamPdf(compressedPage('CastlePDF hybrid fixture'), 6,
+    { hybrid: true }),
   // The same page, then an incremental update replacing its content stream.
   'incremental.pdf': appendUpdate(
     buildPdf(onePage('CastlePDF original revision')),

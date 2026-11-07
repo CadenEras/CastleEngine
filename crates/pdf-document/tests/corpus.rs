@@ -89,3 +89,20 @@ fn page_tree_fixture() {
             .all(|p| matches!(p.resources.as_deref(), Some(Object::Dictionary(_))))
     );
 }
+
+#[test]
+fn compressed_catalog_and_page_tree() {
+    // Catalog, pages and font live in an object stream; the page tree reads
+    // them like uncompressed objects.
+    for name in ["objstm.pdf", "hybrid.pdf"] {
+        let doc = open(name);
+        assert_eq!(doc.page_count(), 1, "{name}");
+        let page = doc.page(0).expect("page");
+        assert_eq!(page.id, id(3));
+        assert_eq!(page.media_box, a4());
+        assert!(matches!(
+            page.resources.as_deref(),
+            Some(Object::Dictionary(_))
+        ));
+    }
+}
