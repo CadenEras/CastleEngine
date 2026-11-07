@@ -33,7 +33,7 @@ Windows et macOS. Proposée le 2026-11-05, acceptée sans modification le 2026-1
 | Identifiant d'application | `io.github.cadeneras.castlepdf` (persistant : chemins de données par OS). Initialement `io.github.cadeneras.castleengine`, changé le 2026-11-06 avec le renommage en CastlePDF, avant toute distribution |
 | Lancement du worker | Binaire `pdf-worker` à côté de l'exécutable du shell, lancé par `std::process`, sans plugin shell Tauri. L'empaquetage en sidecar est traité avec les installateurs |
 | Permissions Tauri | Commandes applicatives déclarées dans `build.rs` ; capability `default` limitée à l'écoute d'événements et aux deux commandes du worker ; CSP sans script distant ni `unsafe-inline` hors développement |
-| OS minimums | Windows 10 22H2 / 11 x64 en priorité ; macOS 13+ ; Linux x86_64 avec WebKitGTK 4.1 (base Ubuntu 22.04). ARM64 hors périmètre P0 |
+| OS minimums | Windows 10 22H2 / 11 x64 en priorité ; macOS 13+ ; Linux x86_64 avec WebKitGTK 4.1 (base Ubuntu 22.04). ARM64 hors périmètre P0. Amendement du 2026-11-07 (ADR-0003) : la cible macOS testée est arm64 (runner `macos-latest`) ; Linux arm64, Windows arm64 et macOS x86_64 reçoivent des jobs en P2, sans compatibilité annoncée avant qu'ils soient verts |
 | Workspace | Cargo à la racine, resolver 3 ; crates créées à mesure du besoin, en commençant par `pdf-syntax` et `pdf-worker` ; `apps/desktop/src-tauri` rejoint le workspace quand le shell existe |
 | Lints | `unsafe_code = "forbid"` ; Clippy `unwrap_used`, `expect_used`, `panic`, `indexing_slicing` refusés hors tests |
 | Budgets | `ResourceLimits` + `Budget` cumulatif + `CancellationToken` dans `pdf-syntax`, couche la plus basse, partagée par toutes les autres |

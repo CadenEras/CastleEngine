@@ -1,6 +1,6 @@
 # ADR-0003 — P2 : ordre des travaux, rasterisation, Flate et chaîne de rendu
 
-Statut : proposé
+Statut : accepté le 2026-11-07
 Date : 2026-11-07
 Responsable : Mélissa Gries (maintenance du dépôt)
 
@@ -58,7 +58,7 @@ canvas. (b) Protocole d'URI personnalisé servant des tuiles encodées (PNG) à 
 éléments `<img>` : cache du navigateur, mais coût d'encodage et de décodage. (c) JSON
 ou base64 : exclu.
 
-## Décision proposée
+## Décision
 
 | Sujet | Proposition |
 | --- | --- |
@@ -86,5 +86,5 @@ ou base64 : exclu.
   Le transport retenu est confirmé ou remplacé d'après ces mesures.
 - Retour arrière : la rasterisation passe par un adaptateur interne, ce qui permet de
   basculer vers `tiny-skia` ; Flate est derrière l'interface de filtre de `pdf-syntax`.
-- Cette ADR modifie `docs/ROADMAP.md` (ordre P2/P3) et la ligne « OS minimums »
-  d'ADR-0001 une fois acceptée.
+- Acceptée le 2026-11-07 : `docs/ROADMAP.md` (contenu de P2 et P3) et la ligne
+  « OS minimums » d'ADR-0001 sont amendés en conséquence.
