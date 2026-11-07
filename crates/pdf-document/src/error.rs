@@ -50,6 +50,11 @@ pub enum StructureErrorKind {
     /// An indirect value resolves to a stream or to another reference where a
     /// direct object is expected.
     UnexpectedIndirection,
+    /// `/UserUnit` is not a positive finite number; reported on the page.
+    InvalidUserUnit,
+    /// `/Contents` is not a stream reference, an array of them, or null;
+    /// reported on the page by the consumers that read it.
+    InvalidContents,
 }
 
 impl From<pdf_syntax::Error> for Error {

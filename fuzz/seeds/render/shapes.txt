@@ -1,0 +1,13 @@
+0.9 g 0 0 64 64 re f
+q 0 0 1 RG 4 w 1 j 10 10 40 30 re S Q
+q 1 0 0 1 20 40 cm 0.7071068 0.7071068 -0.7071068 0.7071068 0 0 cm 0 0.6 0 rg -8 -8 16 16 re f Q
+q 50 30 m 50 36 46 40 40 40 c 34 40 30 36 30 30 c 30 24 34 20 40 20 c 46 20 50 24 50 30 c h W n 1 1 0 rg 0 0 64 64 re f Q
+q /GS0 gs 1 0 0 rg 5 50 20 10 re f Q
+0 g 30 50 20 10 re 34 53 8 4 re f*
+q 0 G 2 w [6 4] 0 d 2 2 m 60 2 l S Q
+/CS1 cs 0.2 0.4 0.6 scn 0 0 5 5 re f
+BT /F1 12 Tf 2 2 Td (x) Tj ET
+/GS1 gs /X0 Do /Sh0 sh /CS2 cs /P0 scn 0 0 9 9 re f
+/OC /MC0 BDC EMC
+BI /W 1 /H 1 /BPC 8 /CS /G ID x EI
+1 0 0 0 k 0 60 4 4 re f

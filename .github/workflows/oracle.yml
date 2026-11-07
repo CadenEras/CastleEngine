@@ -1,12 +1,14 @@
 name: oracle
-# Differential tests against qpdf (ADR-0002): an oracle for tests, never shipped.
-# Not a required check yet: qpdf comes from the Ubuntu archive, whose version
-# moves with the runner image, so a disagreement is analysed before gating.
+# Differential tests against qpdf (ADR-0002) and pdftoppm (ADR-0003): oracles
+# for tests, never shipped nor linked. Not required checks yet: both come from
+# the Ubuntu archive, whose versions move with the runner image, so a
+# disagreement is analysed before gating.
 on:
   pull_request:
     paths:
       - crates/pdf-syntax/**
       - crates/pdf-document/**
+      - crates/pdf-render/**
       - tests/corpus/**
       - scripts/make-fixtures.mjs
       - .github/workflows/oracle.yml
@@ -56,3 +58,31 @@ jobs:
           grep -q "fixtures match qpdf" oracle.log
           grep -q "fixtures: pages match qpdf" oracle.log
           grep -q "streams: decoded data match qpdf" oracle.log
+
+  pdftoppm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; update by reviewed PR
+        with:
+          persist-credentials: false
+      - name: Install poppler-utils
+        timeout-minutes: 10
+        env:
+          APT_OPTS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+        run: |
+          sudo apt-get $APT_OPTS update
+          sudo apt-get $APT_OPTS install -y --no-install-recommends poppler-utils
+          pdftoppm -v
+      - name: Install pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3; update by reviewed PR
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The grep proves that the comparison ran instead of being skipped.
+      - name: Compare with pdftoppm
+        run: |
+          set -o pipefail
+          export CASTLE_PDFTOPPM="$(command -v pdftoppm)"
+          cargo test -p pdf-render --locked --test pdftoppm_oracle -- --nocapture 2>&1 | tee oracle.log
+          grep -q "fixtures: rendering matches pdftoppm" oracle.log

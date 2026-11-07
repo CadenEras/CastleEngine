@@ -4,14 +4,12 @@
 //! bounded: numbers beyond 1e15 use scientific notation, and only standard
 //! trailer keys are named, other keys being counted.
 
-use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
 
 use pdf_document::{Document, Rectangle};
 use pdf_syntax::{
-    Budget, CancellationToken, MemorySource, Object, PdfFile, ResourceLimits, SectionKind, Source,
-    XrefEntry,
+    Budget, CancellationToken, Object, PdfFile, ResourceLimits, SectionKind, Source, XrefEntry,
 };
 
 /// Trailer keys of ISO 32000-2 (table 15), and the keys of a cross-reference
@@ -37,35 +35,8 @@ const TRAILER_KEYS: [&[u8]; 13] = [
 /// means that writing the report itself failed.
 pub fn run(path: &Path, out: &mut dyn Write, err: &mut dyn Write) -> io::Result<u8> {
     let limits = ResourceLimits::default();
-    // The path is not echoed: it may hold control characters or private names.
-    // The type is checked on the path first (Windows refuses to open a
-    // directory as a file) and again on the opened handle.
-    let opened = std::fs::metadata(path).and_then(|m| {
-        if m.is_file() {
-            File::open(path)
-                .and_then(|f| f.metadata().map(|m| (f, m)))
-                .map(|(f, m)| m.is_file().then_some((f, m.len())))
-        } else {
-            Ok(None)
-        }
-    });
-    let (file, size) = match opened {
-        Ok(Some(opened)) => opened,
-        Ok(None) => {
-            writeln!(err, "error: not a regular file")?;
-            return Ok(1);
-        }
-        Err(e) => {
-            writeln!(err, "error: cannot open the file: {}", e.kind())?;
-            return Ok(1);
-        }
-    };
-    let source = match MemorySource::from_reader(file, Some(size), &limits) {
-        Ok(source) => source,
-        Err(e) => {
-            writeln!(err, "error: {e}")?;
-            return Ok(1);
-        }
+    let Some(source) = crate::open::source(path, &limits, err)? else {
+        return Ok(1);
     };
     // One budget for the whole opening: structure, catalog and page tree.
     let mut budget = Budget::new(limits, CancellationToken::new());

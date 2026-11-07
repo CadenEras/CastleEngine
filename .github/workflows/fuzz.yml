@@ -8,6 +8,7 @@ on:
     paths:
       - crates/pdf-syntax/**
       - crates/pdf-document/**
+      - crates/pdf-render/**
       - fuzz/**
       - .github/workflows/fuzz.yml
   workflow_dispatch:
@@ -32,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [lexer, objects, xref, document, flate]
+        target: [lexer, objects, xref, document, flate, render]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -52,10 +53,12 @@ jobs:
       # Idempotent: a cached binary of the same version is kept, any other replaced.
       - name: Install cargo-fuzz
         run: cargo install --locked "cargo-fuzz@$CARGO_FUZZ_VERSION"
+      # Plus target-specific seeds (content streams for `render`).
       - name: Seed the corpus with the public fixtures
         run: |
           mkdir -p "corpus/${{ matrix.target }}"
           cp ../tests/corpus/public/*.pdf "corpus/${{ matrix.target }}/"
+          if [ -d "seeds/${{ matrix.target }}" ]; then cp "seeds/${{ matrix.target }}"/* "corpus/${{ matrix.target }}/"; fi
       - name: Fuzz
         env:
           SECONDS_BUDGET: ${{ inputs.seconds || '300' }}

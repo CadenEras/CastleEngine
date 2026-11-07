@@ -1,6 +1,6 @@
 [package]
 name = "pdf-cli"
-description = "Diagnostic command line over the CastlePDF engine (inspect)"
+description = "Diagnostic command line over the CastlePDF engine (inspect, render)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 pdf-document.workspace = true
+pdf-render.workspace = true
 pdf-syntax.workspace = true
 
 [lints]

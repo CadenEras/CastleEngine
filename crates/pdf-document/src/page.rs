@@ -83,6 +83,9 @@ pub struct Page {
     pub media_box: Rectangle,
     /// `/CropBox` (inherited, default `media_box`) intersected with `media_box`.
     pub crop_box: Rectangle,
+    /// Size of a default user space unit in 1/72 inch (`/UserUnit`, ISO
+    /// 32000-2, 14.11.2.1; not inherited): positive and finite, 1 by default.
+    pub user_unit: f64,
     /// Clockwise rotation for display: 0, 90, 180 or 270.
     pub rotation: u16,
     /// `/Resources` as written (dictionary, or reference to one), inherited and
@@ -99,6 +102,7 @@ impl fmt::Debug for Page {
             .field("id", &self.id)
             .field("media_box", &self.media_box)
             .field("crop_box", &self.crop_box)
+            .field("user_unit", &self.user_unit)
             .field("rotation", &self.rotation)
             .field("resources", &self.resources.is_some())
             .field("contents", &self.contents.is_some())
@@ -326,6 +330,12 @@ pub(crate) fn collect_pages<S: Source>(
             let crop_box = inherited
                 .crop_box
                 .map_or(media_box, |crop| crop.intersect(&media_box));
+            let user_unit = match attribute(file, &node, b"UserUnit", id, budget)? {
+                None => 1.0,
+                Some(Object::Integer(units)) if units > 0 => units as f64,
+                Some(Object::Real(units)) if units.is_finite() && units > 0.0 => units,
+                Some(_) => return Err(invalid(id, StructureErrorKind::InvalidUserUnit)),
+            };
             let contents = match node.remove(b"Contents") {
                 None | Some(Object::Null) => None,
                 Some(contents) => Some(contents),
@@ -334,6 +344,7 @@ pub(crate) fn collect_pages<S: Source>(
                 id,
                 media_box,
                 crop_box,
+                user_unit,
                 rotation: inherited.rotation.unwrap_or(0),
                 resources: inherited.resources,
                 contents,

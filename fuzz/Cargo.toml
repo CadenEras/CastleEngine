@@ -13,6 +13,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.13"
 pdf-document = { path = "../crates/pdf-document" }
+pdf-render = { path = "../crates/pdf-render" }
 pdf-syntax = { path = "../crates/pdf-syntax" }
 
 [[bin]]
@@ -46,6 +47,13 @@ bench = false
 [[bin]]
 name = "flate"
 path = "fuzz_targets/flate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "render"
+path = "fuzz_targets/render.rs"
 test = false
 doc = false
 bench = false
