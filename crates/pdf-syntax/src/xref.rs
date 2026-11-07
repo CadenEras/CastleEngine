@@ -1,20 +1,23 @@
-//! File structure: header, classic cross-reference tables, trailers and
-//! incremental updates (ISO 32000-2:2020, 7.5).
+//! File structure: header, cross-reference tables and streams, trailers and
+//! incremental updates (ISO 32000-2:2020, 7.5), and objects compressed in
+//! object streams (7.5.7).
 //!
 //! Strict (ADR-0002): the header must start the file; every offset given by
-//! `startxref`, `/Prev` or an entry must point exactly at its keyword or object
-//! (no white space or comment skipped); the table layout is read on raw bytes
-//! (`xref` EOL, `first count` EOL, 20-byte entries, `trailer`); `/Prev` chains
-//! must not loop. No reconstruction is attempted. Cross-reference streams,
-//! hybrid files (`/XRefStm`) and encryption are refused as unsupported.
+//! `startxref`, `/Prev`, `/XRefStm` or an entry must point exactly at its
+//! keyword or object (no white space or comment skipped); classic tables are
+//! read on raw bytes (`xref` EOL, `first count` EOL, 20-byte entries,
+//! `trailer`); `/Prev` chains must not loop. No reconstruction is attempted.
+//! Encryption is refused as unsupported.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
 use crate::lexer::{Lexer, Token, is_regular, is_whitespace};
 use crate::limits::{Budget, Capability, Error, MalformedKind};
 use crate::object::{Dictionary, IndirectObject, IndirectValue, Object, ObjectId, Stream};
+use crate::objstm::{ObjectStream, ObjectStreamCache};
 use crate::parser::{LengthResolver, Parser};
 use crate::source::Source;
 
@@ -34,27 +37,47 @@ pub struct Version {
 
 /// One cross-reference entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum XrefEntry {
-    /// `f`: object number of the next free object, and generation for reuse.
+    /// `f` (type 0): object number of the next free object, and generation
+    /// for reuse.
     Free { next: u32, generation: u16 },
-    /// `n`: byte offset of `number generation obj` in the file.
+    /// `n` (type 1): byte offset of `number generation obj` in the file.
     InUse { offset: u64, generation: u16 },
+    /// Type 2: object `index` of the object stream `stream`; generation 0.
+    Compressed { stream: u32, index: u32 },
+}
+
+/// How a cross-reference section is stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SectionKind {
+    /// Classic `xref` table and `trailer`.
+    Table,
+    /// Cross-reference stream (`/Type /XRef`, PDF 1.5).
+    Stream,
+    /// Stream named by `/XRefStm` in a classic trailer (hybrid file); part of
+    /// the revision of that table, not a revision of its own.
+    HybridStream,
 }
 
 /// One cross-reference section of the `/Prev` chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct XrefSection {
-    /// Offset of its `xref` keyword.
+    /// Offset of its `xref` keyword or of its stream object.
     pub offset: u64,
     /// Number of entries it declares.
     pub entries: usize,
+    pub kind: SectionKind,
 }
 
-/// A PDF file opened through its cross-reference tables: entries merged from
+/// A PDF file opened through its cross-reference sections: entries merged from
 /// all revisions (newest wins) and the newest trailer.
 ///
 /// In P1 the reader asks the source for whole ranges, which `MemorySource`
 /// serves without copying; it is meant for in-memory sources (ADR-0002).
+/// Decoded object streams are kept in a small bounded cache.
 ///
 /// ```
 /// use pdf_syntax::{Budget, CancellationToken, MemorySource, PdfFile, ResourceLimits};
@@ -76,6 +99,7 @@ pub struct PdfFile<S> {
     sections: Vec<XrefSection>,
     entries: BTreeMap<u32, XrefEntry>,
     trailer: Dictionary,
+    object_streams: Mutex<ObjectStreamCache>,
 }
 
 /// Never prints the document bytes: they may be private and very large.
@@ -96,8 +120,9 @@ impl<S: Source> PdfFile<S> {
     /// section of the `/Prev` chain. Objects are parsed later, on demand.
     ///
     /// Charges `budget` one object per section, subsection, entry and trailer
-    /// node: give opening its own budget, separate from later tasks. A file with
-    /// more entries than `max_objects_visited` is refused.
+    /// node, and the decoded bytes of cross-reference streams: give opening its
+    /// own budget, separate from later tasks. A file with more entries than
+    /// `max_objects_visited` is refused.
     pub fn open(source: S, budget: &mut Budget) -> Result<Self, Error> {
         let data = source.read(0..source.len())?;
         let version = parse_header(&data)?;
@@ -111,6 +136,7 @@ impl<S: Source> PdfFile<S> {
             sections,
             entries,
             trailer,
+            object_streams: Mutex::new(ObjectStreamCache::default()),
         })
     }
 
@@ -123,17 +149,22 @@ impl<S: Source> PdfFile<S> {
         self.startxref
     }
 
-    /// Sections read, newest first; one per revision.
+    /// Sections read, newest first; a hybrid file lists its `/XRefStm` stream
+    /// right after the table of the same revision.
     pub fn sections(&self) -> &[XrefSection] {
         &self.sections
     }
 
     /// Number of revisions (1 + incremental updates).
     pub fn revisions(&self) -> usize {
-        self.sections.len()
+        self.sections
+            .iter()
+            .filter(|s| s.kind != SectionKind::HybridStream)
+            .count()
     }
 
-    /// Trailer of the newest revision.
+    /// Trailer of the newest revision: the `trailer` dictionary, or the
+    /// dictionary of the newest cross-reference stream.
     pub fn trailer(&self) -> &Dictionary {
         &self.trailer
     }
@@ -156,19 +187,27 @@ impl<S: Source> PdfFile<S> {
     ///
     /// A reference to an object that is free, absent, or whose generation does
     /// not match is a reference to `null` (ISO 32000-2, 7.3.10). The entry
-    /// offset must point exactly at `id`'s `n g obj`. An indirect `/Length` must
-    /// lead to a direct integer; it is never resolved through another indirection.
+    /// offset must point exactly at `id`'s `n g obj`. A compressed object is
+    /// read from its decoded object stream (generation 0, never a stream). An
+    /// indirect `/Length` must lead to a direct integer, possibly compressed;
+    /// it is never resolved through another indirection.
     pub fn resolve(&self, id: ObjectId, budget: &mut Budget) -> Result<IndirectValue, Error> {
-        let Some(offset) = self.locate(id) else {
-            return Ok(IndirectValue::Object(Object::Null));
-        };
-        let data = self.source.read(0..self.source.len())?;
-        let mut length = |length_id: ObjectId, budget: &mut Budget| {
-            self.direct_length(&data, offset, length_id, budget)
-        };
-        let object = parse_at(&data, offset, budget, &mut length)?;
-        check_id(&object, id, offset)?;
-        Ok(object.value)
+        match self.entries.get(&id.number) {
+            Some(XrefEntry::InUse { offset, generation }) if *generation == id.generation => {
+                let offset = *offset;
+                let data = self.source.read(0..self.source.len())?;
+                let mut length = |length_id: ObjectId, budget: &mut Budget| {
+                    self.direct_length(&data, offset, length_id, true, budget)
+                };
+                let object = parse_at(&data, offset, budget, &mut length)?;
+                check_id(&object, id, offset)?;
+                Ok(object.value)
+            }
+            Some(XrefEntry::Compressed { stream, index }) if id.generation == 0 => self
+                .compressed_object(id, *stream, *index, budget)
+                .map(IndirectValue::Object),
+            _ => Ok(IndirectValue::Object(Object::Null)),
+        }
     }
 
     /// Encoded bytes of a stream, as located by `resolve`; filters are not applied.
@@ -184,17 +223,40 @@ impl<S: Source> PdfFile<S> {
         stream: &Stream,
         budget: &mut Budget,
     ) -> Result<Vec<u8>, Error> {
+        self.decode_with(stream, true, budget)
+    }
+
+    /// `decoded_stream_data`, where `allow_compressed` says whether `/Filter`
+    /// and `/DecodeParms` may name compressed objects. Decoding an object
+    /// stream refuses them: otherwise an object stream could need itself (or
+    /// another object stream needing it) to decode, without end.
+    fn decode_with(
+        &self,
+        stream: &Stream,
+        allow_compressed: bool,
+        budget: &mut Budget,
+    ) -> Result<Vec<u8>, Error> {
         let offset = stream.data.start;
+        let invalid = || malformed(offset, MalformedKind::InvalidFilter);
         let mut filtering = Dictionary::new();
         for key in [&b"Filter"[..], b"DecodeParms"] {
             let value = match stream.dictionary.get(key) {
                 None => continue,
-                Some(Object::Reference(id)) => match self.resolve(*id, budget)? {
-                    IndirectValue::Object(Object::Reference(_)) | IndirectValue::Stream(_) => {
-                        return Err(malformed(offset, MalformedKind::InvalidFilter));
+                Some(Object::Reference(id)) => {
+                    let compressed = matches!(
+                        self.entries.get(&id.number),
+                        Some(XrefEntry::Compressed { .. })
+                    );
+                    if compressed && !allow_compressed {
+                        return Err(invalid());
                     }
-                    IndirectValue::Object(object) => object,
-                },
+                    match self.resolve(*id, budget)? {
+                        IndirectValue::Object(Object::Reference(_)) | IndirectValue::Stream(_) => {
+                            return Err(invalid());
+                        }
+                        IndirectValue::Object(object) => object,
+                    }
+                }
                 Some(object) => object.clone(),
             };
             filtering.insert(key.to_vec(), value);
@@ -203,13 +265,57 @@ impl<S: Source> PdfFile<S> {
         crate::filter::decode_stream(&filtering, &encoded, offset, budget)
     }
 
-    fn locate(&self, id: ObjectId) -> Option<u64> {
-        match self.entries.get(&id.number) {
-            Some(XrefEntry::InUse { offset, generation }) if *generation == id.generation => {
-                Some(*offset)
-            }
-            _ => None,
+    /// Object `index` of object stream `stream_number`, which must list `id`.
+    fn compressed_object(
+        &self,
+        id: ObjectId,
+        stream_number: u32,
+        index: u32,
+        budget: &mut Budget,
+    ) -> Result<Object, Error> {
+        let object_stream = self.object_stream(stream_number, budget)?;
+        object_stream.object(id.number, index, budget)
+    }
+
+    /// The decoded object stream `number`, from the cache or decoded now (and
+    /// charged to `budget`). Its `/Length` may not be compressed, so decoding
+    /// one object stream never requires decoding another.
+    fn object_stream(&self, number: u32, budget: &mut Budget) -> Result<Arc<ObjectStream>, Error> {
+        if let Some(found) = lock(&self.object_streams).get(number) {
+            return Ok(found);
         }
+        // check_trailer guarantees an in-use entry for every object stream
+        // named by a compressed entry; object streams have generation 0.
+        let Some(XrefEntry::InUse {
+            offset,
+            generation: 0,
+        }) = self.entries.get(&number).copied()
+        else {
+            return Err(malformed(0, MalformedKind::InvalidObjectStream));
+        };
+        let generation = 0;
+        let data = self.source.read(0..self.source.len())?;
+        let mut length = |length_id: ObjectId, budget: &mut Budget| {
+            self.direct_length(&data, offset, length_id, false, budget)
+        };
+        let object = parse_at(&data, offset, budget, &mut length)?;
+        check_id(&object, ObjectId { number, generation }, offset)?;
+        let IndirectValue::Stream(stream) = object.value else {
+            return Err(malformed(offset, MalformedKind::InvalidObjectStream));
+        };
+        if stream.dictionary.get(b"Type").and_then(Object::as_name) != Some(b"ObjStm") {
+            return Err(malformed(offset, MalformedKind::InvalidObjectStream));
+        }
+        drop(data);
+        let decoded = self.decode_with(&stream, false, budget)?;
+        let object_stream = Arc::new(ObjectStream::parse(
+            &stream.dictionary,
+            decoded,
+            stream.data.start,
+            budget,
+        )?);
+        lock(&self.object_streams).insert(number, Arc::clone(&object_stream));
+        Ok(object_stream)
     }
 
     fn direct_length(
@@ -217,18 +323,37 @@ impl<S: Source> PdfFile<S> {
         data: &[u8],
         stream_offset: u64,
         id: ObjectId,
+        allow_compressed: bool,
         budget: &mut Budget,
     ) -> Result<i64, Error> {
         let invalid = malformed(stream_offset, MalformedKind::InvalidStreamLength);
-        let offset = self.locate(id).ok_or(invalid.clone())?;
-        let mut refuse = |_: ObjectId, _: &mut Budget| Err(invalid.clone());
-        let object = parse_at(data, offset, budget, &mut refuse)?;
-        check_id(&object, id, offset)?;
-        match object.value {
+        let value = match self.entries.get(&id.number).copied() {
+            Some(XrefEntry::InUse { offset, generation }) if generation == id.generation => {
+                let mut refuse = |_: ObjectId, _: &mut Budget| Err(invalid.clone());
+                let object = parse_at(data, offset, budget, &mut refuse)?;
+                check_id(&object, id, offset)?;
+                object.value
+            }
+            Some(XrefEntry::Compressed { stream, index })
+                if allow_compressed && id.generation == 0 =>
+            {
+                IndirectValue::Object(self.compressed_object(id, stream, index, budget)?)
+            }
+            _ => return Err(invalid),
+        };
+        match value {
             IndirectValue::Object(Object::Integer(length)) => Ok(length),
             _ => Err(invalid),
         }
     }
+}
+
+/// The cache lock; a panic while holding it cannot leave the cache in an
+/// unusable state, so a poisoned lock is recovered.
+fn lock(cache: &Mutex<ObjectStreamCache>) -> std::sync::MutexGuard<'_, ObjectStreamCache> {
+    cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Parses `n g obj` starting exactly at `offset`.
@@ -373,7 +498,11 @@ fn find_startxref(data: &[u8]) -> Result<u64, Error> {
 type Merged = BTreeMap<u32, (XrefEntry, u64)>;
 type Sections = (BTreeMap<u32, XrefEntry>, Dictionary, Vec<XrefSection>);
 
-/// Reads the section at `start` and those reached through `/Prev`, newest first.
+/// Reads the section at `start` and those reached through `/Prev`, newest
+/// first. In a hybrid file, the `/XRefStm` stream of a classic section is read
+/// right after its table: in-use table entries win, then stream entries (which
+/// also replace the table's free entries of the same revision), then older
+/// revisions (ISO 32000-2, 7.5.8.4).
 fn read_sections(data: &[u8], start: u64, budget: &mut Budget) -> Result<Sections, Error> {
     let len = data.len() as u64;
     let mut merged: Merged = BTreeMap::new();
@@ -381,6 +510,17 @@ fn read_sections(data: &[u8], start: u64, budget: &mut Budget) -> Result<Section
     let mut sections = Vec::new();
     let mut newest: Option<Dictionary> = None;
     let mut next = Some(start);
+    let offset_in = |object: Option<&Object>, at: u64| -> Result<Option<u64>, Error> {
+        match object {
+            None => Ok(None),
+            Some(Object::Integer(value)) => u64::try_from(*value)
+                .ok()
+                .filter(|o| *o < len)
+                .map(Some)
+                .ok_or(malformed(at, MalformedKind::InvalidTrailer)),
+            Some(_) => Err(malformed(at, MalformedKind::InvalidTrailer)),
+        }
+    };
     while let Some(offset) = next {
         budget.check_cancelled()?;
         if !visited.insert(offset) {
@@ -393,27 +533,55 @@ fn read_sections(data: &[u8], start: u64, budget: &mut Budget) -> Result<Section
         if section.trailer.get(b"Encrypt").is_some() {
             return Err(Error::Unsupported(Capability::Encryption));
         }
-        if section.trailer.get(b"XRefStm").is_some() {
-            return Err(Error::Unsupported(Capability::XrefStreams));
-        }
         sections.push(XrefSection {
             offset,
             entries: section.entries.len(),
+            kind: section.kind,
         });
+        // Free entries this table adds: a hybrid stream of the same revision
+        // may override them (writers list compressed objects as free in the
+        // table for readers without cross-reference stream support).
+        let mut table_free = BTreeSet::new();
         for (number, entry) in section.entries {
-            merged.entry(number).or_insert(entry);
+            if let std::collections::btree_map::Entry::Vacant(slot) = merged.entry(number) {
+                if matches!(entry.0, XrefEntry::Free { .. }) {
+                    table_free.insert(number);
+                }
+                slot.insert(entry);
+            }
         }
-        let invalid_prev = malformed(section.trailer_offset, MalformedKind::InvalidTrailer);
-        next = match section.trailer.get(b"Prev") {
-            None => None,
-            Some(Object::Integer(prev)) => Some(
-                u64::try_from(*prev)
-                    .ok()
-                    .filter(|p| *p < len)
-                    .ok_or(invalid_prev)?,
-            ),
-            Some(_) => return Err(invalid_prev),
+        let hybrid = match section.kind {
+            SectionKind::Table => {
+                offset_in(section.trailer.get(b"XRefStm"), section.trailer_offset)?
+            }
+            _ => None,
         };
+        if let Some(stream_offset) = hybrid {
+            if !visited.insert(stream_offset) {
+                return Err(malformed(stream_offset, MalformedKind::XrefPrevCycle));
+            }
+            budget.charge_object()?;
+            if !is_xref_stream(data, stream_offset, budget) {
+                return Err(malformed(stream_offset, MalformedKind::MissingXref));
+            }
+            let stream = read_xref_stream(data, stream_offset, budget)?;
+            if stream.trailer.get(b"Encrypt").is_some() {
+                return Err(Error::Unsupported(Capability::Encryption));
+            }
+            sections.push(XrefSection {
+                offset: stream_offset,
+                entries: stream.entries.len(),
+                kind: SectionKind::HybridStream,
+            });
+            for (number, entry) in stream.entries {
+                if table_free.contains(&number) {
+                    merged.insert(number, entry);
+                } else {
+                    merged.entry(number).or_insert(entry);
+                }
+            }
+        }
+        next = offset_in(section.trailer.get(b"Prev"), section.trailer_offset)?;
         if newest.is_none() {
             newest = Some(section.trailer);
         }
@@ -424,7 +592,8 @@ fn read_sections(data: &[u8], start: u64, budget: &mut Budget) -> Result<Section
     Ok((entries, trailer, sections))
 }
 
-/// `/Size` and `/Root` of the newest trailer; every entry number below `/Size`.
+/// `/Size` and `/Root` of the newest trailer; every entry number below
+/// `/Size`; every compressed entry names an object stream that is in use.
 fn check_trailer(trailer: &Dictionary, entries: &Merged, start: u64) -> Result<(), Error> {
     let invalid = || malformed(start, MalformedKind::InvalidTrailer);
     let size = trailer
@@ -436,32 +605,187 @@ fn check_trailer(trailer: &Dictionary, entries: &Merged, start: u64) -> Result<(
         .get(b"Root")
         .and_then(Object::as_reference)
         .ok_or_else(invalid)?;
-    match entries
-        .iter()
-        .find(|(number, _)| i64::from(**number) >= size)
-    {
-        Some((_, (_, at))) => Err(malformed(*at, MalformedKind::InvalidXrefEntry)),
-        None => Ok(()),
+    for (number, (entry, at)) in entries {
+        let valid = i64::from(*number) < size
+            && match entry {
+                XrefEntry::Compressed { stream, .. } => {
+                    matches!(entries.get(stream), Some((XrefEntry::InUse { .. }, _)))
+                }
+                _ => true,
+            };
+        if !valid {
+            return Err(malformed(*at, MalformedKind::InvalidXrefEntry));
+        }
     }
+    Ok(())
 }
 
 struct SectionRead {
-    /// Entries with the offset of their 20-byte record.
+    /// Entries with the offset of their record (a classic 20-byte record, or
+    /// the cross-reference stream object).
     entries: Merged,
     trailer: Dictionary,
     trailer_offset: u64,
+    kind: SectionKind,
+}
+
+/// The section at `offset`: a classic table (`xref` exactly there) or a
+/// cross-reference stream (`n g obj` exactly there, `/Type /XRef`).
+fn read_section(data: &[u8], offset: u64, budget: &mut Budget) -> Result<SectionRead, Error> {
+    if keyword_at(data, offset, b"xref") {
+        read_table(data, offset, budget)
+    } else if is_xref_stream(data, offset, budget) {
+        read_xref_stream(data, offset, budget)
+    } else {
+        Err(malformed(offset, MalformedKind::MissingXref))
+    }
+}
+
+/// A cross-reference stream (ISO 32000-2, 7.5.8): its dictionary is the
+/// trailer, its decoded data holds `/W`-sized big-endian fields for the object
+/// ranges of `/Index` (default `[0 /Size]`). Every value of the dictionary must
+/// be direct, `/Length` included. Entries of an unknown type are references to
+/// null and are skipped.
+fn read_xref_stream(data: &[u8], offset: u64, budget: &mut Budget) -> Result<SectionRead, Error> {
+    let len = data.len() as u64;
+    let invalid = || malformed(offset, MalformedKind::InvalidXrefStream);
+    let mut refuse = |_: ObjectId, _: &mut Budget| Err(invalid());
+    let object = parse_at(data, offset, budget, &mut refuse)?;
+    let IndirectValue::Stream(stream) = object.value else {
+        return Err(invalid());
+    };
+    let dictionary = stream.dictionary;
+    if dictionary.get(b"Type").and_then(Object::as_name) != Some(b"XRef") {
+        return Err(invalid());
+    }
+    let encoded = usize::try_from(stream.data.start)
+        .ok()
+        .zip(usize::try_from(stream.data.end).ok())
+        .and_then(|(s, e)| data.get(s..e))
+        .ok_or_else(invalid)?;
+    let decoded = crate::filter::decode_stream(&dictionary, encoded, stream.data.start, budget)?;
+    let size = dictionary
+        .get(b"Size")
+        .and_then(Object::as_integer)
+        .and_then(|s| u64::try_from(s).ok())
+        .ok_or_else(invalid)?;
+    let widths: Vec<usize> = match dictionary.get(b"W").and_then(Object::as_array) {
+        Some(items) if items.len() == 3 => items
+            .iter()
+            .map(|w| {
+                w.as_integer()
+                    .and_then(|w| usize::try_from(w).ok())
+                    .filter(|w| *w <= 8)
+                    .ok_or_else(invalid)
+            })
+            .collect::<Result<_, _>>()?,
+        _ => return Err(invalid()),
+    };
+    let [w_type, w_field2, w_field3] = widths.as_slice() else {
+        return Err(invalid());
+    };
+    let (w_type, w_field2, w_field3) = (*w_type, *w_field2, *w_field3);
+    let record_len = w_type + w_field2 + w_field3;
+    if w_field2 == 0 || record_len == 0 {
+        return Err(invalid());
+    }
+    let ranges: Vec<(u64, u64)> = match dictionary.get(b"Index") {
+        None => vec![(0, size)],
+        Some(Object::Array(items)) if items.len() % 2 == 0 => items
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| match pair {
+                [Object::Integer(first), Object::Integer(count)] => u64::try_from(*first)
+                    .ok()
+                    .zip(u64::try_from(*count).ok())
+                    .filter(|(f, c)| f.saturating_add(*c) <= u64::from(u32::MAX) + 1)
+                    .ok_or_else(invalid),
+                _ => Err(invalid()),
+            })
+            .collect::<Result<_, _>>()?,
+        Some(_) => return Err(invalid()),
+    };
+    let total: u64 = ranges
+        .iter()
+        .try_fold(0_u64, |sum, (_, count)| sum.checked_add(*count))
+        .ok_or_else(invalid)?;
+    let expected = total.checked_mul(record_len as u64).ok_or_else(invalid)?;
+    if decoded.len() as u64 != expected {
+        return Err(invalid());
+    }
+    let mut entries: Merged = BTreeMap::new();
+    let mut records = decoded.chunks_exact(record_len);
+    for (first, count) in ranges {
+        budget.charge_object()?;
+        for i in 0..count {
+            if i % CANCEL_CHECK_ENTRIES == 0 {
+                budget.check_cancelled()?;
+            }
+            budget.charge_object()?;
+            let record = records.next().ok_or_else(invalid)?;
+            let (type_bytes, fields) = record.split_at(w_type);
+            let (field2, field3) = fields.split_at(w_field2);
+            // A missing type field means type 1 (ISO 32000-2, table 17).
+            let kind = if w_type == 0 {
+                1
+            } else {
+                big_endian(type_bytes)
+            };
+            let (field2, field3) = (big_endian(field2), big_endian(field3));
+            let number = u32::try_from(first + i).map_err(|_| invalid())?;
+            let bad_entry = || malformed(offset, MalformedKind::InvalidXrefEntry);
+            let entry = match kind {
+                0 => XrefEntry::Free {
+                    next: u32::try_from(field2).map_err(|_| bad_entry())?,
+                    generation: u16::try_from(field3).map_err(|_| bad_entry())?,
+                },
+                1 => XrefEntry::InUse {
+                    offset: field2,
+                    generation: u16::try_from(field3).map_err(|_| bad_entry())?,
+                },
+                2 => XrefEntry::Compressed {
+                    stream: u32::try_from(field2)
+                        .ok()
+                        .filter(|s| *s > 0)
+                        .ok_or_else(bad_entry)?,
+                    index: u32::try_from(field3).map_err(|_| bad_entry())?,
+                },
+                // Other types are references to null (7.5.8.3): a free entry,
+                // which also hides any older entry for the number.
+                _ => XrefEntry::Free {
+                    next: 0,
+                    generation: 0,
+                },
+            };
+            let valid = match entry {
+                XrefEntry::InUse { offset, .. } => number != 0 && offset < len,
+                XrefEntry::Compressed { stream, .. } => number != 0 && stream != number,
+                _ => true,
+            };
+            if !valid || entries.insert(number, (entry, offset)).is_some() {
+                return Err(malformed(offset, MalformedKind::InvalidXrefEntry));
+            }
+        }
+    }
+    Ok(SectionRead {
+        entries,
+        trailer: dictionary,
+        trailer_offset: offset,
+        kind: SectionKind::Stream,
+    })
+}
+
+/// Unsigned big-endian value of up to 8 bytes.
+fn big_endian(bytes: &[u8]) -> u64 {
+    bytes
+        .iter()
+        .fold(0_u64, |acc, b| (acc << 8) | u64::from(*b))
 }
 
 /// One `xref` table and its `trailer` dictionary, `xref` exactly at `offset`.
-fn read_section(data: &[u8], offset: u64, budget: &mut Budget) -> Result<SectionRead, Error> {
+fn read_table(data: &[u8], offset: u64, budget: &mut Budget) -> Result<SectionRead, Error> {
     let len = data.len() as u64;
-    if !keyword_at(data, offset, b"xref") {
-        return Err(if is_xref_stream(data, offset, budget) {
-            Error::Unsupported(Capability::XrefStreams)
-        } else {
-            malformed(offset, MalformedKind::MissingXref)
-        });
-    }
     let bad = |at| malformed(at, MalformedKind::InvalidXrefSubsection);
     let truncated = Error::Truncated { offset };
     let mut pos = line_end(data, offset + 4).ok_or(bad(offset + 4))?;
@@ -507,7 +831,7 @@ fn read_section(data: &[u8], offset: u64, budget: &mut Budget) -> Result<Section
             let number = u32::try_from(first + i).map_err(|_| bad(pos))?;
             let valid = match entry {
                 XrefEntry::InUse { offset, .. } => number != 0 && offset < len,
-                XrefEntry::Free { .. } => true,
+                _ => true,
             };
             if !valid || entries.insert(number, (entry, at)).is_some() {
                 return Err(invalid);
@@ -522,6 +846,7 @@ fn read_section(data: &[u8], offset: u64, budget: &mut Budget) -> Result<Section
             entries,
             trailer,
             trailer_offset: pos,
+            kind: SectionKind::Table,
         }),
         _ => Err(malformed(pos, MalformedKind::InvalidTrailer)),
     }
@@ -595,3 +920,6 @@ fn decimal(digits: &[u8], len: usize) -> Option<u64> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod stream_tests;

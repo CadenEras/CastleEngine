@@ -17,6 +17,17 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
   limite), checksum vérifié, chaînes de filtres, prédicteurs PNG (10–15) et TIFF (2,
   composantes 8 bits) ; `PdfFile::decoded_stream_data` résout `/Filter` et
   `/DecodeParms` indirects. Autres filtres : `Unsupported(StreamFilter)`.
+- `pdf-syntax` : flux de références croisées (ISO 32000-2, 7.5.8 ; `/W`, `/Index`,
+  prédicteurs), fichiers hybrides (`/XRefStm` lu après la table de sa révision) et flux
+  d'objets (7.5.7) : `XrefEntry::Compressed`, objets compressés résolus depuis leur flux
+  décodé, gardé dans un cache borné (8 flux, 32 Mio) et facturé une fois par décodage ;
+  un flux d'objets doit avoir un `/Length` non compressé (pas de récursion). Les PDF 1.5+
+  ne sont plus refusés avec `Unsupported(XrefStreams)`. `SectionKind` décrit chaque
+  section ; `castle-pdf inspect` compte les objets compressés.
+- Fixtures `objstm.pdf` et `hybrid.pdf` ; l'oracle qpdf compare aussi les entrées compressées.
+  Divergence connue : quand la table d'un fichier hybride liste comme libres les objets
+  compressés, CastlePDF (comme qpdf 10) suit le flux `/XRefStm`, alors que qpdf 12 laisse
+  l'entrée libre masquer l'objet ; la fixture évite cette forme, les tests unitaires la couvrent.
 - Fixture `flate.pdf` (encodeur zlib déterministe du générateur), comparaison de chaque
   flux décodé avec `qpdf --filtered-stream-data`, cible de fuzzing `flate`.
 

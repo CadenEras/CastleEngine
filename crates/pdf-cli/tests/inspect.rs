@@ -45,8 +45,8 @@ fn page_tree_report_is_stable() {
          version: 1.4\n\
          startxref: 824\n\
          revisions: 1\n  \
-         section 1: xref at 824, 11 entries\n\
-         objects: 10 in use, 1 free\n\
+         section 1: xref table at 824, 11 entries\n\
+         objects: 10 in use, 0 compressed, 1 free\n\
          trailer keys: /Root /Size\n\
          root: 1 0 R\n\
          size entry: 11\n\
@@ -62,7 +62,7 @@ fn incremental_report_lists_both_revisions() {
     let (code, out, _) = inspect(&corpus("incremental.pdf"));
     assert_eq!(code, 0);
     assert!(out.contains(
-        "revisions: 2\n  section 1: xref at 715, 1 entries\n  section 2: xref at 425, 6 entries\n"
+        "revisions: 2\n  section 1: xref table at 715, 1 entries\n  section 2: xref table at 425, 6 entries\n"
     ));
     assert!(out.contains("trailer keys: /Prev /Root /Size\n"));
 }
@@ -110,7 +110,10 @@ fn the_structure_is_reported_before_a_page_tree_error() {
     }
     let (code, out, err) = inspect(&scratch("bad-count.pdf", &bytes));
     assert_eq!(code, 1);
-    assert!(out.contains("objects: 5 in use, 1 free\n"), "{out}");
+    assert!(
+        out.contains("objects: 5 in use, 0 compressed, 1 free\n"),
+        "{out}"
+    );
     assert!(!out.contains("pages:"));
     assert_eq!(
         err,
@@ -184,4 +187,29 @@ fn extreme_coordinates_print_on_bounded_lines() {
         .expect("page line");
     assert!(line.contains("media box [-1.7e308 0 1.7e308 1]"), "{line}");
     assert!(line.len() < 200, "{line}");
+}
+
+#[test]
+fn xref_stream_and_hybrid_reports() {
+    let (code, out, err) = inspect(&corpus("objstm.pdf"));
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("version: 1.5\n"), "{out}");
+    assert!(
+        out.contains("  section 1: xref stream at 507, 8 entries\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("objects: 4 in use, 3 compressed, 1 free\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("trailer keys: /DecodeParms /Filter /Length /Root /Size /Type /W\n"),
+        "{out}"
+    );
+    let (code, out, err) = inspect(&corpus("hybrid.pdf"));
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        out.contains("revisions: 1\n  section 1: xref table at 693, 5 entries\n  section 2: hybrid xref stream at 500, 3 entries\n"),
+        "{out}"
+    );
 }

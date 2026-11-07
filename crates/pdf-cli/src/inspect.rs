@@ -10,12 +10,27 @@ use std::path::Path;
 
 use pdf_document::{Document, Rectangle};
 use pdf_syntax::{
-    Budget, CancellationToken, MemorySource, Object, PdfFile, ResourceLimits, Source, XrefEntry,
+    Budget, CancellationToken, MemorySource, Object, PdfFile, ResourceLimits, SectionKind, Source,
+    XrefEntry,
 };
 
-/// Trailer keys of ISO 32000-2 (table 15), the only ones printed by name.
-const TRAILER_KEYS: [&[u8]; 7] = [
-    b"Encrypt", b"ID", b"Info", b"Prev", b"Root", b"Size", b"XRefStm",
+/// Trailer keys of ISO 32000-2 (table 15), and the keys of a cross-reference
+/// stream dictionary that serves as trailer (table 17, with the stream keys):
+/// the only ones printed by name.
+const TRAILER_KEYS: [&[u8]; 13] = [
+    b"DecodeParms",
+    b"Encrypt",
+    b"Filter",
+    b"ID",
+    b"Index",
+    b"Info",
+    b"Length",
+    b"Prev",
+    b"Root",
+    b"Size",
+    b"Type",
+    b"W",
+    b"XRefStm",
 ];
 
 /// Writes the report to `out` and errors to `err`; returns 0 or 1. An `Err`
@@ -81,21 +96,32 @@ fn file_report<S: Source>(file: &PdfFile<S>, out: &mut dyn Write) -> io::Result<
     writeln!(out, "startxref: {}", file.startxref())?;
     writeln!(out, "revisions: {}", file.revisions())?;
     for (i, section) in file.sections().iter().enumerate() {
+        let kind = match section.kind {
+            SectionKind::Table => "xref table",
+            SectionKind::Stream => "xref stream",
+            SectionKind::HybridStream => "hybrid xref stream",
+            _ => "xref section",
+        };
         writeln!(
             out,
-            "  section {}: xref at {}, {} entries",
+            "  section {}: {kind} at {}, {} entries",
             i + 1,
             section.offset,
             section.entries
         )?;
     }
-    let (in_use, free) = file
-        .entries()
-        .fold((0, 0), |(u, f), (_, entry)| match entry {
-            XrefEntry::InUse { .. } => (u + 1, f),
-            XrefEntry::Free { .. } => (u, f + 1),
-        });
-    writeln!(out, "objects: {in_use} in use, {free} free")?;
+    let (mut in_use, mut compressed, mut free) = (0, 0, 0);
+    for (_, entry) in file.entries() {
+        match entry {
+            XrefEntry::InUse { .. } => in_use += 1,
+            XrefEntry::Compressed { .. } => compressed += 1,
+            _ => free += 1,
+        }
+    }
+    writeln!(
+        out,
+        "objects: {in_use} in use, {compressed} compressed, {free} free"
+    )?;
     let trailer = file.trailer();
     let mut known = Vec::new();
     let mut others = 0_usize;

@@ -389,9 +389,10 @@ fn trailer_requirements_and_unsupported_capabilities() {
         open(&build("%PDF-1.7", &[CATALOG], " /Encrypt << >>").0).err(),
         Some(Error::Unsupported(Capability::Encryption))
     );
+    // /XRefStm must point at a cross-reference stream: offset 0 is the header.
     assert_eq!(
-        open(&build("%PDF-1.7", &[CATALOG], " /XRefStm 0").0).err(),
-        Some(Error::Unsupported(Capability::XrefStreams))
+        kind(open(&build("%PDF-1.7", &[CATALOG], " /XRefStm 0").0)),
+        Some(MalformedKind::MissingXref)
     );
 }
 
@@ -538,7 +539,7 @@ fn entries_are_charged_and_cancellation_is_honoured() {
 }
 
 #[test]
-fn a_cross_reference_stream_is_unsupported() {
+fn a_cross_reference_stream_with_inconsistent_data_is_refused() {
     let xref_stream =
         "<< /Type /XRef /Size 3 /W [1 2 1] /Root 1 0 R /Length 0 >>\nstream\n\nendstream";
     let (valid, xref) = build("%PDF-1.7", &[CATALOG, xref_stream], "");
@@ -551,10 +552,8 @@ fn a_cross_reference_stream_is_unsupported() {
         &format!("startxref\n{xref}\n"),
         &format!("startxref\n{target}\n"),
     );
-    assert_eq!(
-        open(&pointed).err(),
-        Some(Error::Unsupported(Capability::XrefStreams))
-    );
+    // 3 entries of 1 + 2 + 1 bytes announced, but no data.
+    assert_eq!(kind(open(&pointed)), Some(MalformedKind::InvalidXrefStream));
 }
 
 #[test]
@@ -645,11 +644,13 @@ fn an_update_can_free_an_object() {
         &[
             XrefSection {
                 offset: freed,
-                entries: 1
+                entries: 1,
+                kind: SectionKind::Table,
             },
             XrefSection {
                 offset: xref,
-                entries: 4
+                entries: 4,
+                kind: SectionKind::Table,
             }
         ]
     );
@@ -657,17 +658,16 @@ fn an_update_can_free_an_object() {
 
 #[test]
 fn older_trailers_are_checked_too() {
-    for (extra, error) in [
-        (
-            " /Encrypt << >>",
-            Error::Unsupported(Capability::Encryption),
-        ),
-        (" /XRefStm 0", Error::Unsupported(Capability::XrefStreams)),
-    ] {
-        let (base, xref) = build("%PDF-1.7", &[CATALOG], extra);
-        let (updated, _) = update(base, xref, &[(1, CATALOG)], 2);
-        assert_eq!(open(&updated).err(), Some(error));
-    }
+    let (base, xref) = build("%PDF-1.7", &[CATALOG], " /Encrypt << >>");
+    let (updated, _) = update(base, xref, &[(1, CATALOG)], 2);
+    assert_eq!(
+        open(&updated).err(),
+        Some(Error::Unsupported(Capability::Encryption))
+    );
+    // An older /XRefStm is followed too: here it points at the header.
+    let (base, xref) = build("%PDF-1.7", &[CATALOG], " /XRefStm 0");
+    let (updated, _) = update(base, xref, &[(1, CATALOG)], 2);
+    assert_eq!(kind(open(&updated)), Some(MalformedKind::MissingXref));
     // /Prev negative or past the end.
     let (base, xref) = build("%PDF-1.7", &[CATALOG], "");
     let (updated, _) = update(base, xref, &[(1, CATALOG)], 2);

@@ -68,7 +68,8 @@ pub enum Error {
 pub enum Capability {
     /// Stream data stored in an external file (`/F` in the stream dictionary).
     ExternalStreamData,
-    /// Cross-reference streams, including hybrid files (`/XRefStm`); planned in P3.
+    /// Cross-reference streams. Supported since 0.1.0-alpha.3 and no longer
+    /// returned; kept so that existing matches still compile.
     XrefStreams,
     /// Encrypted documents (`/Encrypt` in the trailer).
     Encryption,
@@ -143,6 +144,12 @@ pub enum MalformedKind {
     /// Predictor parameters out of range, or predicted data that is not a
     /// whole number of rows or uses an unknown PNG filter type.
     InvalidPredictor,
+    /// A cross-reference stream with an invalid `/W`, `/Index` or `/Size`, a
+    /// data length that does not match them, or an indirect `/Length`.
+    InvalidXrefStream,
+    /// An object stream that is not `/Type /ObjStm` or has an invalid `/N`,
+    /// `/First` or header (object numbers and increasing offsets).
+    InvalidObjectStream,
 }
 
 impl fmt::Display for Error {
