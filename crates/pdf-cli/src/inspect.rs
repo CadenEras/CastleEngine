@@ -1,0 +1,173 @@
+//! `castle-pdf inspect <file>`: structure report, never document content.
+//!
+//! The report is written line by line (no whole-report buffer); every line is
+//! bounded: numbers beyond 1e15 use scientific notation, and only standard
+//! trailer keys are named, other keys being counted.
+
+use std::fs::File;
+use std::io::{self, Write};
+use std::path::Path;
+
+use pdf_document::{Document, Rectangle};
+use pdf_syntax::{
+    Budget, CancellationToken, MemorySource, Object, PdfFile, ResourceLimits, Source, XrefEntry,
+};
+
+/// Trailer keys of ISO 32000-2 (table 15), the only ones printed by name.
+const TRAILER_KEYS: [&[u8]; 7] = [
+    b"Encrypt", b"ID", b"Info", b"Prev", b"Root", b"Size", b"XRefStm",
+];
+
+/// Writes the report to `out` and errors to `err`; returns 0 or 1. An `Err`
+/// means that writing the report itself failed.
+pub fn run(path: &Path, out: &mut dyn Write, err: &mut dyn Write) -> io::Result<u8> {
+    let limits = ResourceLimits::default();
+    // The path is not echoed: it may hold control characters or private names.
+    // The type is checked on the path first (Windows refuses to open a
+    // directory as a file) and again on the opened handle.
+    let opened = std::fs::metadata(path).and_then(|m| {
+        if m.is_file() {
+            File::open(path)
+                .and_then(|f| f.metadata().map(|m| (f, m)))
+                .map(|(f, m)| m.is_file().then_some((f, m.len())))
+        } else {
+            Ok(None)
+        }
+    });
+    let (file, size) = match opened {
+        Ok(Some(opened)) => opened,
+        Ok(None) => {
+            writeln!(err, "error: not a regular file")?;
+            return Ok(1);
+        }
+        Err(e) => {
+            writeln!(err, "error: cannot open the file: {}", e.kind())?;
+            return Ok(1);
+        }
+    };
+    let source = match MemorySource::from_reader(file, Some(size), &limits) {
+        Ok(source) => source,
+        Err(e) => {
+            writeln!(err, "error: {e}")?;
+            return Ok(1);
+        }
+    };
+    // One budget for the whole opening: structure, catalog and page tree.
+    let mut budget = Budget::new(limits, CancellationToken::new());
+    writeln!(out, "size: {} bytes", Source::len(&source))?;
+    let file = match PdfFile::open(source, &mut budget) {
+        Ok(file) => file,
+        Err(e) => {
+            writeln!(err, "error: {e}")?;
+            return Ok(1);
+        }
+    };
+    file_report(&file, out)?;
+    match Document::from_file(file, &mut budget) {
+        Ok(document) => {
+            pages_report(&document, out)?;
+            Ok(0)
+        }
+        Err(e) => {
+            writeln!(err, "error: {e}")?;
+            Ok(1)
+        }
+    }
+}
+
+fn file_report<S: Source>(file: &PdfFile<S>, out: &mut dyn Write) -> io::Result<()> {
+    let version = file.version();
+    writeln!(out, "version: {}.{}", version.major, version.minor)?;
+    writeln!(out, "startxref: {}", file.startxref())?;
+    writeln!(out, "revisions: {}", file.revisions())?;
+    for (i, section) in file.sections().iter().enumerate() {
+        writeln!(
+            out,
+            "  section {}: xref at {}, {} entries",
+            i + 1,
+            section.offset,
+            section.entries
+        )?;
+    }
+    let (in_use, free) = file
+        .entries()
+        .fold((0, 0), |(u, f), (_, entry)| match entry {
+            XrefEntry::InUse { .. } => (u + 1, f),
+            XrefEntry::Free { .. } => (u, f + 1),
+        });
+    writeln!(out, "objects: {in_use} in use, {free} free")?;
+    let trailer = file.trailer();
+    let mut known = Vec::new();
+    let mut others = 0_usize;
+    for (key, _) in trailer.iter() {
+        match TRAILER_KEYS.iter().find(|k| **k == key) {
+            Some(k) => known.push(String::from_utf8_lossy(k).into_owned()),
+            None => others += 1,
+        }
+    }
+    let names: Vec<String> = known.iter().map(|k| format!("/{k}")).collect();
+    write!(out, "trailer keys: {}", names.join(" "))?;
+    if others > 0 {
+        write!(out, " (+{others} other)")?;
+    }
+    writeln!(out)?;
+    if let Some(root) = file.root() {
+        writeln!(out, "root: {} {} R", root.number, root.generation)?;
+    }
+    if let Some(size) = trailer.get(b"Size").and_then(Object::as_integer) {
+        writeln!(out, "size entry: {size}")?;
+    }
+    Ok(())
+}
+
+fn pages_report<S: Source>(document: &Document<S>, out: &mut dyn Write) -> io::Result<()> {
+    writeln!(out, "pages: {}", document.page_count())?;
+    for (i, page) in document.pages().iter().enumerate() {
+        writeln!(
+            out,
+            "  page {}: object {} {}, media box {}, crop box {}, rotation {}",
+            i + 1,
+            page.id.number,
+            page.id.generation,
+            rectangle(&page.media_box),
+            rectangle(&page.crop_box),
+            page.rotation
+        )?;
+    }
+    Ok(())
+}
+
+fn rectangle(r: &Rectangle) -> String {
+    format!(
+        "[{} {} {} {}]",
+        number(r.llx),
+        number(r.lly),
+        number(r.urx),
+        number(r.ury)
+    )
+}
+
+/// Plain notation for ordinary values, scientific beyond 1e15, so that one
+/// coordinate never prints hundreds of digits.
+fn number(value: f64) -> String {
+    if value.abs() < 1e15 {
+        format!("{value}")
+    } else {
+        format!("{value:e}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rectangles_print_bounded_numbers() {
+        assert_eq!(
+            rectangle(&Rectangle::new(0.0, 0.0, 595.0, 842.5)),
+            "[0 0 595 842.5]"
+        );
+        assert_eq!(number(-1.7e308), "-1.7e308");
+        assert!(number(f64::MAX).len() < 32);
+    }
+}

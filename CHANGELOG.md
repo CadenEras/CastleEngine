@@ -28,6 +28,9 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
   itérativement dans l'ordre du document (profondeur bornée, cycles et nœuds partagés
   refusés, `/Parent` et `/Count` vérifiés), attributs hérités `MediaBox`, `CropBox`
   (intersectée avec `MediaBox`), `Rotate` et `Resources` ; erreurs nommant l'objet fautif.
+- `pdf-cli` (nouvelle crate, binaire `castle-pdf`) : `inspect <fichier>` affiche la
+  structure du fichier et les pages, jamais le contenu ; codes de sortie 0/1/2.
+  `Document::from_file` permet de rapporter la structure même si l'arbre est invalide.
 - Fixture `page-tree.pdf` (arbre imbriqué, héritage, rotation) et comparaison de
   l'ordre des pages avec `qpdf --show-pages`.
 - Fixture `incremental.pdf` (deux révisions) et test différentiel contre `qpdf`

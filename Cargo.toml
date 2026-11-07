@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "apps/desktop/src-tauri",
+    "crates/pdf-cli",
     "crates/pdf-document",
     "crates/pdf-syntax",
     "crates/pdf-worker",
