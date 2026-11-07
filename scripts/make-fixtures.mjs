@@ -281,10 +281,11 @@ export const fixtures = {
       '0 g 90 172 30 20 re 98 178 14 8 re f*',
       'q 0 G 2 w [6 4] 0 d 130 182 m 190 182 l S Q',
     ].join('\n')), ' /Filter /FlateDecode'),
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Rotate 90 /Contents 7 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Rotate 90 /Resources << >> '
+      + '/Contents 7 0 R >>',
     stream('1 0 0 rg 0 0 50 100 re f'),
     '<< /Type /ExtGState /ca 0.5 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Contents 10 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << >> /Contents 10 0 R >>',
     stream('1 0 0 0 k 0 10 10 10 re f 0 1 0 0 k 10 10 10 10 re f '
       + '0 0 1 0 k 0 0 10 10 re f 0 0 0 1 k 10 0 10 10 re f'),
   ]),
