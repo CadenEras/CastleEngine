@@ -12,7 +12,13 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
 - `pdf-syntax` : tokenizer strict (ISO 32000-2, 7.2–7.3) avec offsets, erreurs
   `Malformed`/`Truncated` localisées et chaînes/noms décodés comptés dans le budget ;
   source d'entrée en mémoire bornée par la nouvelle limite `max_input_bytes` (512 Mio).
-- Tests de propriétés (`proptest`) et fuzzing (`cargo-fuzz`, cible `lexer`, workflow
+- `pdf-syntax` : objets PDF (ISO 32000-2, 7.3) — tableaux, dictionnaires à clés
+  uniques, références `n g R`, objets indirects et streams localisés par `/Length`
+  (direct ou résolu par l'appelant) sans copie des données, `endstream` vérifié
+  octet par octet ; profondeur bornée (pile explicite, plafond dur de 256), chaque
+  objet compté dans le budget, erreurs localisées. Première erreur de capacité :
+  `Unsupported(ExternalStreamData)` pour les streams à fichier externe (`/F`).
+- Tests de propriétés (`proptest`) et fuzzing (`cargo-fuzz`, cibles `lexer` et `objects`, workflow
   `fuzz` borné en temps).
 - ADR-0002 accepté : stratégie de lecture P1.
 - CI : `cargo-deny` (contrôle requis `deny`, workflow `advisories` pour RustSec),

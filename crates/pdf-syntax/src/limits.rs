@@ -58,6 +58,16 @@ pub enum Error {
     },
     /// Reading the input failed.
     Io(io::ErrorKind),
+    /// Valid PDF that uses a capability this version does not implement.
+    Unsupported(Capability),
+}
+
+/// PDF capability not implemented yet, reported instead of a partial result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Capability {
+    /// Stream data stored in an external file (`/F` in the stream dictionary).
+    ExternalStreamData,
 }
 
 /// Precise reason for an `Error::Malformed`.
@@ -76,6 +86,27 @@ pub enum MalformedKind {
     InvalidNameEscape,
     /// A name containing the byte 0, which ISO 32000 forbids.
     NullInName,
+    /// A token that cannot appear here, such as `]` outside an array, `{`, or an
+    /// operator keyword in an object.
+    UnexpectedToken,
+    /// A dictionary key that is not a name.
+    DictionaryKeyNotName,
+    /// A dictionary closed after a key without its value.
+    MissingDictionaryValue,
+    /// The same key twice in one dictionary; ISO 32000 leaves the result undefined.
+    DuplicateKey,
+    /// An object number below 1 or above 2^32 - 1, or a generation outside 0..=65535.
+    InvalidObjectId,
+    /// `n g` not followed by `obj`.
+    MissingObjKeyword,
+    /// An indirect object not closed by `endobj`.
+    MissingEndobj,
+    /// `stream` not followed by CRLF or LF.
+    MissingStreamEol,
+    /// `/Length` absent, negative or not an integer.
+    InvalidStreamLength,
+    /// No `endstream` after `/Length` bytes of stream data.
+    MissingEndstream,
 }
 
 impl fmt::Display for Error {
@@ -92,6 +123,9 @@ impl fmt::Display for Error {
                 write!(f, "input ends inside a construct started at byte {offset}")
             }
             Self::Io(kind) => write!(f, "cannot read input: {kind}"),
+            Self::Unsupported(capability) => {
+                write!(f, "unsupported PDF capability: {capability:?}")
+            }
         }
     }
 }
