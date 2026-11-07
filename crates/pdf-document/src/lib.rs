@@ -54,6 +54,12 @@ impl<S: Source> Document<S> {
     /// `max_nesting_depth`. Give opening its own budget.
     pub fn open(source: S, budget: &mut Budget) -> Result<Self, Error> {
         let file = PdfFile::open(source, budget)?;
+        Self::from_file(file, budget)
+    }
+
+    /// Reads the catalog and the page tree of a file already opened, so that a
+    /// caller can report on the file structure even when the tree is invalid.
+    pub fn from_file(file: PdfFile<S>, budget: &mut Budget) -> Result<Self, Error> {
         let root = file
             .root()
             .ok_or(Error::Syntax(pdf_syntax::Error::Malformed {

@@ -80,6 +80,21 @@ Oracle qpdf (ADR-0002, jamais livré) : avec qpdf installé, sous Linux ou macOS
 compare, pour chaque fixture de `tests/corpus/public` (toutes valides), les entrées xref à
 `qpdf --show-xref` et l'ordre des pages à `qpdf --show-pages`. Sans `CASTLE_QPDF`, le test est sauté ; le workflow `oracle` l'impose.
 
+## CLI de diagnostic `castle-pdf` (crate `pdf-cli`)
+
+Interface effective, relevée sur `--help` (version 0.1.0-alpha.1) :
+
+```sh
+cargo run -p pdf-cli -- inspect <fichier>   # castle-pdf inspect <fichier>
+cargo run -p pdf-cli -- --help
+cargo run -p pdf-cli -- --version
+```
+
+`inspect` affiche la structure (taille, version, `startxref`, révisions et sections xref,
+objets en usage/libres, clés du trailer, racine, pages avec objet, MediaBox, CropBox et
+rotation), jamais le contenu du document. La structure du fichier est affichée même si
+l'arbre des pages est invalide. Codes de sortie : 0 succès, 1 document illisible (erreur
+sur la sortie d'erreur), 2 usage incorrect. Limites par défaut de `ResourceLimits`.
+
 Benchmarks, autres tests différentiels et vérifications de conformité seront ajoutés avec
-leurs fixtures et outils. Ne pas copier une commande imaginaire de
-`pdf-cli` : lire son `--help` et consigner l'interface effective lors de sa création.
+leurs fixtures et outils. Ne pas inventer d'option à `castle-pdf` : relire son `--help`.

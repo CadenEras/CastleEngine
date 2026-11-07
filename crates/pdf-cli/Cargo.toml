@@ -1,0 +1,19 @@
+[package]
+name = "pdf-cli"
+description = "Diagnostic command line over the CastlePDF engine (inspect)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "castle-pdf"
+path = "src/main.rs"
+
+[dependencies]
+pdf-document.workspace = true
+pdf-syntax.workspace = true
+
+[lints]
+workspace = true
