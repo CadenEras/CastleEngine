@@ -71,14 +71,14 @@ cargo install --locked cargo-fuzz@0.13.2
 cargo fuzz run lexer -- -max_total_time=300 -rss_limit_mb=2048 -dict=dict/pdf.dict   # ou objects
 ```
 
-Cibles : `lexer`, `objects`, `xref`. Un crash est écrit dans `fuzz/artifacts/<cible>/` ; le minimiser (`cargo fuzz tmin`)
+Cibles : `lexer`, `objects`, `xref`, `document`. Un crash est écrit dans `fuzz/artifacts/<cible>/` ; le minimiser (`cargo fuzz tmin`)
 puis en faire un test de régression dans la crate concernée. La CI (`fuzz.yml`) lance
 5 minutes par cible chaque semaine et sur les PR touchant le parseur.
 
 Oracle qpdf (ADR-0002, jamais livré) : avec qpdf installé, sous Linux ou macOS,
-`CASTLE_QPDF="$(command -v qpdf)" cargo test -p pdf-syntax --locked --test qpdf_oracle -- --nocapture`
-compare les entrées xref de chaque fixture de `tests/corpus/public` (toutes valides) à
-`qpdf --show-xref`. Sans `CASTLE_QPDF`, le test est sauté ; le workflow `oracle` l'impose.
+`CASTLE_QPDF="$(command -v qpdf)" cargo test -p pdf-syntax -p pdf-document --locked --test qpdf_oracle -- --nocapture`
+compare, pour chaque fixture de `tests/corpus/public` (toutes valides), les entrées xref à
+`qpdf --show-xref` et l'ordre des pages à `qpdf --show-pages`. Sans `CASTLE_QPDF`, le test est sauté ; le workflow `oracle` l'impose.
 
 Benchmarks, autres tests différentiels et vérifications de conformité seront ajoutés avec
 leurs fixtures et outils. Ne pas copier une commande imaginaire de

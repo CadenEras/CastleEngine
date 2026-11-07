@@ -24,9 +24,15 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
   cycles détectés), résolution d'objet avec contrôle d'identifiant et `/Length`
   indirect sans récursion ; référence vers un objet libre ou absent = `null`.
   Refus explicites : xref streams et fichiers hybrides, chiffrement, version inconnue.
+- `pdf-document` (nouvelle crate) : `Document` — catalogue, arbre des pages parcouru
+  itérativement dans l'ordre du document (profondeur bornée, cycles et nœuds partagés
+  refusés, `/Parent` et `/Count` vérifiés), attributs hérités `MediaBox`, `CropBox`
+  (intersectée avec `MediaBox`), `Rotate` et `Resources` ; erreurs nommant l'objet fautif.
+- Fixture `page-tree.pdf` (arbre imbriqué, héritage, rotation) et comparaison de
+  l'ordre des pages avec `qpdf --show-pages`.
 - Fixture `incremental.pdf` (deux révisions) et test différentiel contre `qpdf`
   (`--check`, `--show-xref`) dans le workflow non requis `oracle`.
-- Tests de propriétés (`proptest`) et fuzzing (`cargo-fuzz`, cibles `lexer`, `objects` et `xref`, workflow
+- Tests de propriétés (`proptest`) et fuzzing (`cargo-fuzz`, cibles `lexer`, `objects`, `xref` et `document`, workflow
   `fuzz` borné en temps).
 - ADR-0002 accepté : stratégie de lecture P1.
 - CI : `cargo-deny` (contrôle requis `deny`, workflow `advisories` pour RustSec),

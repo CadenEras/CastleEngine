@@ -111,6 +111,12 @@ impl Dictionary {
     pub fn insert(&mut self, key: Vec<u8>, value: Object) -> Option<Object> {
         self.entries.insert(key, value)
     }
+
+    /// Removes and returns an entry, so that a value can be moved out without
+    /// copying it.
+    pub fn remove(&mut self, key: &[u8]) -> Option<Object> {
+        self.entries.remove(key)
+    }
 }
 
 /// A stream object: its dictionary and the byte range of its encoded data in
