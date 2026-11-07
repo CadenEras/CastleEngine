@@ -12,6 +12,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4.13"
+pdf-document = { path = "../crates/pdf-document" }
 pdf-syntax = { path = "../crates/pdf-syntax" }
 
 [[bin]]
@@ -31,6 +32,13 @@ bench = false
 [[bin]]
 name = "xref"
 path = "fuzz_targets/xref.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "document"
+path = "fuzz_targets/document.rs"
 test = false
 doc = false
 bench = false

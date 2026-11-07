@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - crates/pdf-syntax/**
+      - crates/pdf-document/**
       - tests/corpus/**
       - scripts/make-fixtures.mjs
       - .github/workflows/oracle.yml
@@ -45,10 +46,12 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3; update by reviewed PR
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # pdf-syntax only: the oracle does not need the Tauri shell or WebKitGTK.
+      # Engine crates only: the oracle needs neither the Tauri shell nor WebKitGTK.
+      # Each grep proves that its comparison ran instead of being skipped.
       - name: Compare with qpdf
         run: |
           set -o pipefail
           export CASTLE_QPDF="$(command -v qpdf)"
-          cargo test -p pdf-syntax --locked --test qpdf_oracle -- --nocapture 2>&1 | tee oracle.log
+          cargo test -p pdf-syntax -p pdf-document --locked --test qpdf_oracle -- --nocapture 2>&1 | tee oracle.log
           grep -q "fixtures match qpdf" oracle.log
+          grep -q "fixtures: pages match qpdf" oracle.log

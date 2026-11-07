@@ -69,6 +69,21 @@ function onePage(text) {
 export const fixtures = {
   // One A4 page, one line of text in a standard 14 font, uncompressed.
   'minimal.pdf': buildPdf(onePage('CastlePDF minimal fixture')),
+  // Three pages in a nested tree: MediaBox and Resources inherited from the
+  // root, Rotate from an intermediate node, one page with its own MediaBox.
+  'page-tree.pdf': buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 3 /MediaBox [0 0 595 842] '
+      + '/Resources << /Font << /F1 7 0 R >> >> >>',
+    '<< /Type /Pages /Parent 2 0 R /Kids [4 0 R 5 0 R] /Count 2 /Rotate 90 >>',
+    '<< /Type /Page /Parent 3 0 R /Contents 8 0 R >>',
+    '<< /Type /Page /Parent 3 0 R /MediaBox [0 0 842 595] /Contents 9 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /Contents 10 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    stream('BT /F1 24 Tf 72 770 Td (Page 1) Tj ET'),
+    stream('BT /F1 24 Tf 72 520 Td (Page 2) Tj ET'),
+    stream('BT /F1 24 Tf 72 770 Td (Page 3) Tj ET'),
+  ]),
   // The same page, then an incremental update replacing its content stream.
   'incremental.pdf': appendUpdate(
     buildPdf(onePage('CastlePDF original revision')),

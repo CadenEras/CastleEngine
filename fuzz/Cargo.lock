@@ -70,10 +70,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdf-document"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "pdf-syntax",
+]
+
+[[package]]
 name = "pdf-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "pdf-document",
  "pdf-syntax",
 ]
 

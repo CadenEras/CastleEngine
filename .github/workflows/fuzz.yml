@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [lexer, objects, xref]
+        target: [lexer, objects, xref, document]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
