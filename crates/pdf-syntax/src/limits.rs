@@ -68,6 +68,12 @@ pub enum Error {
 pub enum Capability {
     /// Stream data stored in an external file (`/F` in the stream dictionary).
     ExternalStreamData,
+    /// Cross-reference streams, including hybrid files (`/XRefStm`); planned in P3.
+    XrefStreams,
+    /// Encrypted documents (`/Encrypt` in the trailer).
+    Encryption,
+    /// A header version other than 1.0 to 1.7 or 2.0.
+    PdfVersion,
 }
 
 /// Precise reason for an `Error::Malformed`.
@@ -107,6 +113,25 @@ pub enum MalformedKind {
     InvalidStreamLength,
     /// No `endstream` after `/Length` bytes of stream data.
     MissingEndstream,
+    /// The file does not start with `%PDF-M.m` followed by white space.
+    InvalidHeader,
+    /// No `startxref` with a valid offset in the last 1024 bytes.
+    MissingStartxref,
+    /// `startxref` not followed by `%%EOF` and only white space.
+    MissingEof,
+    /// The cross-reference offset does not point at `xref`.
+    MissingXref,
+    /// A cross-reference subsection header other than `first count` and an EOL.
+    InvalidXrefSubsection,
+    /// A cross-reference entry that is not 20 bytes of `oooooooooo ggggg n|f` and
+    /// an EOL, repeats a number, or points outside the file.
+    InvalidXrefEntry,
+    /// A trailer without a valid `/Size` or `/Root`, or with an invalid `/Prev`.
+    InvalidTrailer,
+    /// A `/Prev` chain that returns to a section already read.
+    XrefPrevCycle,
+    /// The object at a cross-reference offset is not the one referenced.
+    ObjectIdMismatch,
 }
 
 impl fmt::Display for Error {

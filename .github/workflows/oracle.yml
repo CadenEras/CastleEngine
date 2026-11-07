@@ -1,0 +1,54 @@
+name: oracle
+# Differential tests against qpdf (ADR-0002): an oracle for tests, never shipped.
+# Not a required check yet: qpdf comes from the Ubuntu archive, whose version
+# moves with the runner image, so a disagreement is analysed before gating.
+on:
+  pull_request:
+    paths:
+      - crates/pdf-syntax/**
+      - tests/corpus/**
+      - scripts/make-fixtures.mjs
+      - .github/workflows/oracle.yml
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  qpdf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; update by reviewed PR
+        with:
+          persist-credentials: false
+      - name: Install qpdf
+        timeout-minutes: 10
+        env:
+          APT_OPTS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+        run: |
+          sudo apt-get $APT_OPTS update
+          sudo apt-get $APT_OPTS install -y --no-install-recommends qpdf
+          qpdf --version
+      - name: Install pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3; update by reviewed PR
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # pdf-syntax only: the oracle does not need the Tauri shell or WebKitGTK.
+      - name: Compare with qpdf
+        run: |
+          set -o pipefail
+          export CASTLE_QPDF="$(command -v qpdf)"
+          cargo test -p pdf-syntax --locked --test qpdf_oracle -- --nocapture 2>&1 | tee oracle.log
+          grep -q "fixtures match qpdf" oracle.log

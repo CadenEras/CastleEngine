@@ -18,7 +18,15 @@ Versions selon [SemVer](https://semver.org/) ; règles propres à `0.x` dans
   octet par octet ; profondeur bornée (pile explicite, plafond dur de 256), chaque
   objet compté dans le budget, erreurs localisées. Première erreur de capacité :
   `Unsupported(ExternalStreamData)` pour les streams à fichier externe (`/F`).
-- Tests de propriétés (`proptest`) et fuzzing (`cargo-fuzz`, cibles `lexer` et `objects`, workflow
+- `pdf-syntax` : structure de fichier (ISO 32000-2, 7.5) — trait `Source` à accès
+  aléatoire, `PdfFile` : en-tête `%PDF-1.0` à `2.0`, `startxref`/`%%EOF`, tables xref
+  classiques à entrées de 20 octets, trailer, mises à jour incrémentales (`/Prev`,
+  cycles détectés), résolution d'objet avec contrôle d'identifiant et `/Length`
+  indirect sans récursion ; référence vers un objet libre ou absent = `null`.
+  Refus explicites : xref streams et fichiers hybrides, chiffrement, version inconnue.
+- Fixture `incremental.pdf` (deux révisions) et test différentiel contre `qpdf`
+  (`--check`, `--show-xref`) dans le workflow non requis `oracle`.
+- Tests de propriétés (`proptest`) et fuzzing (`cargo-fuzz`, cibles `lexer`, `objects` et `xref`, workflow
   `fuzz` borné en temps).
 - ADR-0002 accepté : stratégie de lecture P1.
 - CI : `cargo-deny` (contrôle requis `deny`, workflow `advisories` pour RustSec),

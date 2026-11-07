@@ -3,16 +3,27 @@
 //! ADR-0002: the whole file is read once, without `mmap`. Growth is bounded by
 //! the limit, never by a size announced by the input or its metadata.
 
+use std::borrow::Cow;
 use std::io::{self, Read};
+use std::ops::Range;
 
 use crate::limits::{Error, LimitKind, ResourceLimits};
 
 const READ_CHUNK: usize = 64 * 1024;
 
 /// Immutable document bytes, at most `ResourceLimits::max_input_bytes` long.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MemorySource {
     data: Vec<u8>,
+}
+
+/// Prints the length only: document bytes may be private and very large.
+impl std::fmt::Debug for MemorySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemorySource")
+            .field("len", &self.data.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl MemorySource {
@@ -79,6 +90,42 @@ impl MemorySource {
 
     pub fn bytes(&self) -> &[u8] {
         &self.data
+    }
+}
+
+/// Random access to the bytes of one document (ADR-0002, docs/ARCHITECTURE.md).
+///
+/// Offsets are `u64`; conversion to platform sizes happens inside the source.
+/// The structure reader only depends on this trait. In P1 it asks for whole
+/// ranges, which `MemorySource` serves without copying; a ranged source will
+/// need windowed reads in the reader, not a change of this contract.
+pub trait Source {
+    /// Length of the input in bytes.
+    fn len(&self) -> u64;
+
+    /// Returns exactly the bytes of `range`; a range past the end is `Truncated`.
+    fn read(&self, range: Range<u64>) -> Result<Cow<'_, [u8]>, Error>;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl Source for MemorySource {
+    fn len(&self) -> u64 {
+        self.data.len() as u64
+    }
+
+    fn read(&self, range: Range<u64>) -> Result<Cow<'_, [u8]>, Error> {
+        let start = usize::try_from(range.start).ok();
+        let end = usize::try_from(range.end).ok();
+        start
+            .zip(end)
+            .and_then(|(start, end)| self.data.get(start..end))
+            .map(Cow::Borrowed)
+            .ok_or(Error::Truncated {
+                offset: range.start,
+            })
     }
 }
 
